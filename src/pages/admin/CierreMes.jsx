@@ -2,24 +2,33 @@ import React, { useState, useEffect } from 'react';
 import { Calculator, Plus, Trash2, TrendingUp, TrendingDown, DollarSign, CheckCircle, AlertCircle, X, Download } from 'lucide-react';
 import { apiGetCierreMes, apiAgregarGasto, apiEliminarGasto } from '../../api.js';
 
-const MESES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+const getFormattedDate = (date) => {
+  return date.toISOString().split('T')[0];
+};
 
 export default function CierreMes() {
-  const now = new Date();
-  const [mes, setMes] = useState(now.getMonth() + 1);
-  const [anio, setAnio] = useState(now.getFullYear());
+  const todayStr = getFormattedDate(new Date());
+  const thirtyDaysAgo = new Date();
+  thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+  const thirtyDaysAgoStr = getFormattedDate(thirtyDaysAgo);
+
+  const [startDate, setStartDate] = useState(thirtyDaysAgoStr);
+  const [endDate, setEndDate] = useState(todayStr);
   const [datos, setDatos] = useState(null);
   const [loading, setLoading] = useState(false);
   const [showAddGasto, setShowAddGasto] = useState(false);
-  const [gastoForm, setGastoForm] = useState({ descripcion: '', valor: '' });
+  const [gastoForm, setGastoForm] = useState({ descripcion: '', valor: '', fecha: todayStr });
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState(null);
 
-  const years = Array.from({ length: 5 }, (_, i) => now.getFullYear() - i);
+  useEffect(() => {
+    loadCierre();
+  }, []);
 
   async function loadCierre() {
+    if (!startDate || !endDate) { showToast('error', 'Selecciona el rango de fechas'); return; }
     setLoading(true);
-    const res = await apiGetCierreMes(mes, anio);
+    const res = await apiGetCierreMes(startDate, endDate);
     if (res.success) setDatos(res.data);
     else showToast('error', res.error || 'Error al cargar');
     setLoading(false);
@@ -27,13 +36,16 @@ export default function CierreMes() {
 
   async function handleAddGasto(e) {
     e.preventDefault();
-    if (!gastoForm.descripcion || !gastoForm.valor) { showToast('error', 'Completa todos los campos'); return; }
+    if (!gastoForm.descripcion || !gastoForm.valor || !gastoForm.fecha) {
+      showToast('error', 'Completa todos los campos');
+      return;
+    }
     setSaving(true);
-    const res = await apiAgregarGasto({ ...gastoForm, mes, anio });
+    const res = await apiAgregarGasto(gastoForm);
     if (res.success) {
       showToast('success', 'Gasto agregado');
       setShowAddGasto(false);
-      setGastoForm({ descripcion: '', valor: '' });
+      setGastoForm({ descripcion: '', valor: '', fecha: todayStr });
       loadCierre();
     } else showToast('error', res.error || 'Error');
     setSaving(false);
@@ -53,10 +65,15 @@ export default function CierreMes() {
 
   function fmt(val) { return `$${Number(val || 0).toLocaleString('es-CO')}`; }
 
+  function formatDateLocale(isoString) {
+    if (!isoString) return '';
+    return new Date(isoString).toLocaleDateString('es-CO', { day: '2-digit', month: 'short', year: 'numeric' });
+  }
+
   return (
     <div className="page-enter">
       <div className="page-header">
-        <h1>Cierre de Mes</h1>
+        <h1>Cierre de Caja / Período</h1>
         {datos && (
           <button className="btn btn-ghost" onClick={() => window.print()}>
             <Download size={15} /> Imprimir
@@ -65,21 +82,28 @@ export default function CierreMes() {
       </div>
 
       <div className="page-body">
-        {/* Selector de período */}
+        {/* Selector de período móvil */}
         <div className="card" style={{ marginBottom: 20 }}>
-          <h3 className="card-title">Seleccionar período</h3>
+          <h3 className="card-title">Seleccionar rango de fechas</h3>
+          <p className="card-subtitle">Se calcularán los ingresos y gastos registrados entre estas fechas (inclusive)</p>
           <div style={{ display: 'flex', gap: 12, alignItems: 'flex-end', flexWrap: 'wrap' }}>
             <div className="form-group" style={{ marginBottom: 0, minWidth: 160 }}>
-              <label>Mes</label>
-              <select className="form-select" value={mes} onChange={e => setMes(Number(e.target.value))}>
-                {MESES.map((m, i) => <option key={i} value={i + 1}>{m}</option>)}
-              </select>
+              <label>Fecha de Inicio</label>
+              <input
+                type="date"
+                className="form-input"
+                value={startDate}
+                onChange={e => setStartDate(e.target.value)}
+              />
             </div>
-            <div className="form-group" style={{ marginBottom: 0 }}>
-              <label>Año</label>
-              <select className="form-select" value={anio} onChange={e => setAnio(Number(e.target.value))}>
-                {years.map(y => <option key={y}>{y}</option>)}
-              </select>
+            <div className="form-group" style={{ marginBottom: 0, minWidth: 160 }}>
+              <label>Fecha de Fin</label>
+              <input
+                type="date"
+                className="form-input"
+                value={endDate}
+                onChange={e => setEndDate(e.target.value)}
+              />
             </div>
             <button className="btn btn-primary" onClick={loadCierre} disabled={loading}>
               {loading ? <span className="spinner" style={{ width: 16, height: 16, borderWidth: 2 }} /> : <Calculator size={16} />}
@@ -95,7 +119,7 @@ export default function CierreMes() {
               <div className="cierre-stat" style={{ borderTop: '3px solid var(--accent-green)' }}>
                 <TrendingUp size={24} color="var(--accent-green)" />
                 <div className="amount amount-income">{fmt(datos.totalIngresos)}</div>
-                <div className="label">Ingresos ({datos.cantidadRecibos} recibos)</div>
+                <div className="label">Ingresos ({datos.cantidadRecibos} recibos aprobados)</div>
               </div>
               <div className="cierre-stat" style={{ borderTop: '3px solid var(--accent-red)' }}>
                 <TrendingDown size={24} color="var(--accent-red)" />
@@ -107,7 +131,7 @@ export default function CierreMes() {
                 <div className={`amount ${datos.balance >= 0 ? 'amount-balance-pos' : 'amount-balance-neg'}`}>
                   {datos.balance >= 0 ? '+' : ''}{fmt(datos.balance)}
                 </div>
-                <div className="label">Balance del mes</div>
+                <div className="label">Balance del período</div>
               </div>
             </div>
 
@@ -116,14 +140,16 @@ export default function CierreMes() {
               <div className="card">
                 <h3 className="card-title" style={{ marginBottom: 16 }}>📥 Detalle de Ingresos</h3>
                 {datos.detalleIngresos?.length === 0 ? (
-                  <p style={{ color: 'var(--text-secondary)', fontSize: 13 }}>Sin ingresos registrados</p>
+                  <p style={{ color: 'var(--text-secondary)', fontSize: 13 }}>Sin ingresos registrados en este rango de fechas</p>
                 ) : (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
                     {datos.detalleIngresos?.map((d, i) => (
                       <div key={i} style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 0', borderBottom: '1px solid var(--border)' }}>
                         <div>
                           <p style={{ fontSize: 13, fontWeight: 600 }}>{d.usuario}</p>
-                          <p style={{ fontSize: 11, color: 'var(--text-secondary)' }}>{d.placa} · {d.tipo_vehiculo}</p>
+                          <p style={{ fontSize: 11, color: 'var(--text-secondary)' }}>
+                            {d.placa} · {d.tipo_vehiculo} · Subido: {formatDateLocale(d.fecha)}
+                          </p>
                         </div>
                         <span style={{ fontWeight: 700, color: 'var(--accent-green)', fontSize: 14 }}>{fmt(d.valor)}</span>
                       </div>
@@ -146,7 +172,7 @@ export default function CierreMes() {
 
                 {datos.gastos?.length === 0 ? (
                   <div style={{ textAlign: 'center', padding: '30px 0', color: 'var(--text-secondary)' }}>
-                    <p style={{ fontSize: 13 }}>Sin gastos registrados</p>
+                    <p style={{ fontSize: 13 }}>Sin gastos registrados en este rango de fechas</p>
                     <button className="btn btn-ghost btn-sm" style={{ marginTop: 8 }} onClick={() => setShowAddGasto(true)}>
                       <Plus size={14} /> Agregar gasto
                     </button>
@@ -157,7 +183,7 @@ export default function CierreMes() {
                       <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 0', borderBottom: '1px solid var(--border)' }}>
                         <div>
                           <p style={{ fontSize: 13, fontWeight: 600 }}>{g.descripcion}</p>
-                          <p style={{ fontSize: 11, color: 'var(--text-secondary)' }}>{new Date(g.fecha_registro).toLocaleDateString('es-CO')}</p>
+                          <p style={{ fontSize: 11, color: 'var(--text-secondary)' }}>{formatDateLocale(g.fecha_registro)}</p>
                         </div>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                           <span style={{ fontWeight: 700, color: 'var(--accent-red)' }}>{fmt(g.valor)}</span>
@@ -183,7 +209,7 @@ export default function CierreMes() {
         <div className="modal-overlay" onClick={e => e.target === e.currentTarget && setShowAddGasto(false)}>
           <div className="modal-box">
             <div className="modal-header">
-              <h2>Agregar Gasto — {MESES[mes - 1]} {anio}</h2>
+              <h2>Registrar Gasto</h2>
               <button className="modal-close" onClick={() => setShowAddGasto(false)}><X size={16} /></button>
             </div>
             <form onSubmit={handleAddGasto}>
@@ -205,6 +231,15 @@ export default function CierreMes() {
                     value={gastoForm.valor}
                     onChange={e => setGastoForm(f => ({ ...f, valor: e.target.value }))}
                     min="0"
+                  />
+                </div>
+                <div className="form-group">
+                  <label>Fecha de gasto</label>
+                  <input
+                    type="date"
+                    className="form-input"
+                    value={gastoForm.fecha}
+                    onChange={e => setGastoForm(f => ({ ...f, fecha: e.target.value }))}
                   />
                 </div>
               </div>

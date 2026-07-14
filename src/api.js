@@ -65,7 +65,7 @@ export const apiCrearSolicitud = (data) => callAPI('crearSolicitud', data);
 export const apiResponderSolicitud = (id, respuesta) => callAPI('responderSolicitud', { id, respuesta });
 
 // Cierre de mes
-export const apiGetCierreMes = (mes, anio) => callAPI('getCierreMes', { mes, anio });
+export const apiGetCierreMes = (startDate, endDate) => callAPI('getCierreMes', { startDate, endDate });
 export const apiAgregarGasto = (data) => callAPI('agregarGasto', data);
 export const apiEliminarGasto = (id) => callAPI('eliminarGasto', { id });
 

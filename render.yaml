@@ -1,0 +1,10 @@
+services:
+  - type: web
+    name: goparking-frontend
+    runtime: static
+    buildCommand: npm run build
+    publishDir: dist
+    routes:
+      - type: rewrite
+        from: /*
+        destination: /index.html

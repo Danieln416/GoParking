@@ -793,8 +793,6 @@ tbody tr:hover { background: var(--bg-card-hover); }
   }
 }
 @media (max-width: 768px) {
-  :root { --sidebar-w: 0px; }
-  .sidebar { display: none; }
   .page-body { padding: 16px; }
   .form-row { grid-template-columns: 1fr; }
   .cierre-stats { grid-template-columns: 1fr; }

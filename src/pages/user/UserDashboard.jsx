@@ -3,8 +3,7 @@ import { Receipt, Clock, CheckCircle, Upload, MessageSquare, Car, Bike, Truck } 
 import { useAuth } from '../../context/AuthContext.jsx';
 import { apiGetRecibos, apiGetSolicitudes } from '../../api.js';
 import { Link } from 'react-router-dom';
-
-const MESES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+import { formatPeriodoLabel } from '../../utils/periodo.js';
 
 function vehicleIcon(tipo) {
   if (tipo === 'moto') return <Bike size={20} />;
@@ -110,7 +109,7 @@ export default function UserDashboard() {
               <div>
                 <h3 className="card-title">Último Recibo</h3>
                 <p className="card-subtitle">
-                  {MESES[ultimoRecibo.mes - 1]} {ultimoRecibo.anio} · Subido el {new Date(ultimoRecibo.fecha_subida).toLocaleDateString('es-CO')}
+                  {formatPeriodoLabel(ultimoRecibo)} · Subido el {new Date(ultimoRecibo.fecha_subida).toLocaleDateString('es-CO')}
                 </p>
               </div>
               <StatusBadge estado={ultimoRecibo.estado} />

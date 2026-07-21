@@ -2,8 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Receipt, ExternalLink, Clock, CheckCircle, XCircle } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext.jsx';
 import { apiGetRecibos } from '../../api.js';
-
-const MESES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+import { formatPeriodoLabel } from '../../utils/periodo.js';
 
 function StatusBadge({ estado }) {
   if (estado === 'aprobado') return <span className="badge badge-approved"><CheckCircle size={11} /> Aprobado</span>;
@@ -85,7 +84,7 @@ export default function Historial() {
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 8 }}>
                     <div>
                       <h3 style={{ fontSize: 15, fontWeight: 700, marginBottom: 2 }}>
-                        {MESES[(recibo.mes || 1) - 1]} {recibo.anio}
+                        {formatPeriodoLabel(recibo)}
                       </h3>
                       <p style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
                         Subido: {new Date(recibo.fecha_subida).toLocaleDateString('es-CO', { day: '2-digit', month: 'short', year: 'numeric' })}

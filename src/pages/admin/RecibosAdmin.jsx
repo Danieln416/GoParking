@@ -1,8 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Receipt, Check, X, ExternalLink, Filter, CheckCircle, AlertCircle } from 'lucide-react';
 import { apiGetRecibos, apiAprobarRecibo, apiRechazarRecibo } from '../../api.js';
-
-const MESES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+import { formatPeriodoLabel } from '../../utils/periodo.js';
 
 export default function RecibosAdmin() {
   const [recibos, setRecibos] = useState([]);
@@ -108,7 +107,7 @@ export default function RecibosAdmin() {
                     <p style={{ fontWeight: 700, fontSize: 14 }}>{r.usuario_nombre}</p>
                     <p style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{r.usuario_correo}</p>
                     <p style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 2 }}>
-                      {MESES[(r.mes || 1) - 1]} {r.anio}
+                      {formatPeriodoLabel(r)}
                     </p>
                   </div>
                   <EstadoBadge estado={r.estado} />
@@ -141,7 +140,7 @@ export default function RecibosAdmin() {
             </div>
             <div className="modal-body">
               <div style={{ display: 'flex', gap: 8, marginBottom: 12, fontSize: 13, color: 'var(--text-secondary)' }}>
-                <span>📅 {MESES[(selectedRecibo.mes || 1) - 1]} {selectedRecibo.anio}</span>
+                <span>📅 {formatPeriodoLabel(selectedRecibo)}</span>
                 <span>·</span>
                 <span>📧 {selectedRecibo.usuario_correo}</span>
                 <span>·</span>

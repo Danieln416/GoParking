@@ -1,11 +1,12 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Outlet, NavLink, useNavigate } from 'react-router-dom';
-import { Car, LayoutDashboard, Users, Receipt, MapPin, Calculator, MessageSquare, LogOut } from 'lucide-react';
+import { Car, LayoutDashboard, Users, Receipt, MapPin, Calculator, MessageSquare, LogOut, Menu, X } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext.jsx';
 
 export default function AdminLayout() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   function handleLogout() {
     logout();
@@ -14,7 +15,8 @@ export default function AdminLayout() {
 
   return (
     <div className="app-layout">
-      <aside className="sidebar">
+      <div className={`sidebar-overlay ${mobileMenuOpen ? 'active' : ''}`} onClick={() => setMobileMenuOpen(false)} />
+      <aside className={`sidebar ${mobileMenuOpen ? 'open' : ''}`}>
         <div className="sidebar-logo">
           <div className="sidebar-logo-icon"><Car size={22} color="#fff" /></div>
           <div className="sidebar-logo-text">
@@ -72,6 +74,12 @@ export default function AdminLayout() {
       </aside>
 
       <div className="main-content">
+        <div className="mobile-topbar">
+          <button className="mobile-menu-toggle" onClick={() => setMobileMenuOpen((prev) => !prev)} aria-label="Abrir menú">
+            {mobileMenuOpen ? <X size={20} /> : <Menu size={20} />}
+          </button>
+          <div className="mobile-topbar-title">Panel Admin</div>
+        </div>
         <Outlet />
       </div>
     </div>

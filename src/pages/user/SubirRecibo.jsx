@@ -2,13 +2,17 @@ import React, { useState, useRef } from 'react';
 import { Upload, Camera, Image, X, CheckCircle, AlertCircle } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext.jsx';
 import { apiSubirRecibo } from '../../api.js';
+import { calcularFechaFin, formatPeriodoLabel } from '../../utils/periodo.js';
 
 const MESES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+const TODAY = new Date().toISOString().slice(0, 10);
 
 export default function SubirRecibo() {
   const { user } = useAuth();
   const [file, setFile] = useState(null);
   const [preview, setPreview] = useState(null);
+  const [fechaInicio, setFechaInicio] = useState(TODAY);
+  const [fechaFin, setFechaFin] = useState(calcularFechaFin(TODAY));
   const [mes, setMes] = useState(new Date().getMonth() + 1);
   const [anio, setAnio] = useState(new Date().getFullYear());
   const [loading, setLoading] = useState(false);
@@ -36,7 +40,7 @@ export default function SubirRecibo() {
     e.preventDefault();
     if (!file) { alert('Selecciona una imagen del recibo'); return; }
     setLoading(true);
-    const res = await apiSubirRecibo(user.id, user.nombre, user.correo, mes, anio, file);
+    const res = await apiSubirRecibo(user.id, user.nombre, user.correo, fechaInicio, fechaFin, mes, anio, file);
     setResult(res);
     if (res.success) {
       setFile(null);
@@ -77,21 +81,28 @@ export default function SubirRecibo() {
           <form onSubmit={handleSubmit}>
             <div className="card">
               <h3 className="card-title">Período de pago</h3>
-              <p className="card-subtitle">Selecciona el mes y año del pago</p>
+              <p className="card-subtitle">Selecciona la fecha de inicio y el sistema calculará el fin del periodo.</p>
 
-              <div className="form-row" style={{ marginBottom: 0 }}>
-                <div className="form-group">
-                  <label>Mes</label>
-                  <select className="form-select" value={mes} onChange={e => setMes(Number(e.target.value))}>
-                    {MESES.map((m, i) => <option key={i} value={i + 1}>{m}</option>)}
-                  </select>
-                </div>
-                <div className="form-group">
-                  <label>Año</label>
-                  <select className="form-select" value={anio} onChange={e => setAnio(Number(e.target.value))}>
-                    {years.map(y => <option key={y} value={y}>{y}</option>)}
-                  </select>
-                </div>
+              <div className="form-group">
+                <label>Fecha de inicio del periodo</label>
+                <input
+                  type="date"
+                  className="form-input"
+                  value={fechaInicio}
+                  onChange={e => {
+                    const value = e.target.value;
+                    const [year, month] = value.split('-').map(Number);
+                    setFechaInicio(value);
+                    setFechaFin(calcularFechaFin(value));
+                    setAnio(year || new Date().getFullYear());
+                    setMes(month || new Date().getMonth() + 1);
+                  }}
+                />
+              </div>
+
+              <div className="card" style={{ background: 'var(--bg-secondary)', padding: 14, marginTop: 8 }}>
+                <p style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 4 }}>Periodo calculado</p>
+                <p style={{ fontWeight: 700, color: 'var(--text-primary)' }}>{formatPeriodoLabel({ fecha_inicio: fechaInicio, fecha_fin: fechaFin })}</p>
               </div>
             </div>
 

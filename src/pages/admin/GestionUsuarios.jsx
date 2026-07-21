@@ -1,14 +1,16 @@
 import React, { useEffect, useState } from 'react';
 import { Users, Plus, Edit2, Trash2, Search, X, CheckCircle, AlertCircle } from 'lucide-react';
 import { apiGetUsuarios, apiCrearUsuario, apiActualizarUsuario, apiEliminarUsuario } from '../../api.js';
+import { calcularFechaFin } from '../../utils/periodo.js';
 
 const TIPOS_VEHICULO = ['Carro', 'Moto', 'Bicicleta'];
 const TIPOS_TARIFA = ['Mensualidad', 'Por días', 'Por horas'];
+const TODAY = new Date().toISOString().slice(0, 10);
 
 const EMPTY_FORM = {
   nombre: '', correo: '', telefono: '', celular: '',
   direccion: '', placa: '', tipo_vehiculo: 'Carro',
-  tipo_tarifa: 'Mensualidad', valor_tarifa: '', contrasena: ''
+  tipo_tarifa: 'Mensualidad', valor_tarifa: '', contrasena: '', fecha_inicio: TODAY
 };
 
 export default function GestionUsuarios() {
@@ -31,23 +33,25 @@ export default function GestionUsuarios() {
 
   function openCreate() {
     setEditingUser(null);
-    setForm(EMPTY_FORM);
+    setForm({ ...EMPTY_FORM, fecha_inicio: TODAY });
     setShowModal(true);
   }
 
   function openEdit(u) {
     setEditingUser(u);
-    setForm({ ...u, contrasena: '' });
+    setForm({ ...u, contrasena: '', fecha_inicio: u.fecha_inicio || TODAY });
     setShowModal(true);
   }
 
   async function handleSave(e) {
     e.preventDefault();
     if (!form.nombre || !form.correo) { showToast('error', 'Nombre y correo son requeridos'); return; }
+    const fechaFin = calcularFechaFin(form.fecha_inicio || TODAY);
     setSaving(true);
+    const payload = { ...form, fecha_inicio: form.fecha_inicio || TODAY, fecha_fin: fechaFin };
     const res = editingUser
-      ? await apiActualizarUsuario({ ...form, id: editingUser.id })
-      : await apiCrearUsuario(form);
+      ? await apiActualizarUsuario({ ...payload, id: editingUser.id })
+      : await apiCrearUsuario(payload);
     if (res.success) {
       showToast('success', editingUser ? 'Usuario actualizado' : `Usuario creado. Contraseña inicial: ${res.data?.passwordInicial || form.contrasena}`);
       setShowModal(false);
@@ -209,6 +213,18 @@ export default function GestionUsuarios() {
                     <label>Valor de la tarifa ($)</label>
                     <input type="number" className="form-input" value={form.valor_tarifa} onChange={e => setForm(f => ({ ...f, valor_tarifa: e.target.value }))} placeholder="150000" min="0" />
                   </div>
+                </div>
+                <div className="form-group">
+                  <label>Fecha de inicio del periodo</label>
+                  <input
+                    type="date"
+                    className="form-input"
+                    value={form.fecha_inicio || TODAY}
+                    onChange={e => setForm(f => ({ ...f, fecha_inicio: e.target.value }))}
+                  />
+                  <small style={{ color: 'var(--text-muted)', fontSize: 11 }}>
+                    El fin del periodo se calcula automáticamente desde esa fecha.
+                  </small>
                 </div>
                 <div className="form-group">
                   <label>{editingUser ? 'Nueva contraseña (dejar vacío para no cambiar)' : 'Contraseña inicial'}</label>

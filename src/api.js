@@ -37,13 +37,19 @@ export const apiGetRecibos = (userId = 'all') => callAPI('getRecibos', { userId 
 export const apiAprobarRecibo = (id, nota = '') => callAPI('aprobarRecibo', { id, nota });
 export const apiRechazarRecibo = (id, nota = '') => callAPI('rechazarRecibo', { id, nota });
 
-export const apiSubirRecibo = async (userId, userName, userEmail, mes, anio, file) => {
+export const apiSubirRecibo = async (userId, userName, userEmail, fechaInicio, fechaFin, mes, anio, file) => {
   return new Promise((resolve) => {
     const reader = new FileReader();
     reader.onload = async (e) => {
       const base64Data = e.target.result.split(',')[1];
       const result = await callAPI('subirRecibo', {
-        userId, userName, userEmail, mes, anio,
+        userId, userName, userEmail,
+        fecha_inicio: fechaInicio,
+        fecha_fin: fechaFin,
+        fechaInicio,
+        fechaFin,
+        mes,
+        anio,
         base64Data,
         fileName: file.name,
         mimeType: file.type,

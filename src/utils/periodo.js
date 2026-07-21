@@ -9,8 +9,7 @@ function parseDate(value) {
 function formatDateLabel(date) {
   const day = date.getDate();
   const month = MESES[date.getMonth()];
-  const year = date.getFullYear();
-  return `${day} de ${month}${year ? ` de ${year}` : ''}`;
+  return `${day} de ${month}`;
 }
 
 export function formatPeriodoLabel(recibo = {}) {
@@ -23,8 +22,11 @@ export function formatPeriodoLabel(recibo = {}) {
 
   const mes = Number(recibo.mes || 1);
   const anio = Number(recibo.anio || new Date().getFullYear());
+
   if (mes && anio) {
-    return `${MESES[mes - 1] || 'Mes'} ${anio}`;
+    const inicio = new Date(anio, mes - 1, 12);
+    const fin = new Date(mes === 12 ? anio + 1 : anio, mes % 12, 11);
+    return `Del ${formatDateLabel(inicio)} al ${formatDateLabel(fin)}`;
   }
 
   return 'Periodo no definido';

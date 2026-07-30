@@ -3,7 +3,7 @@
 // Reemplaza GAS_URL con la URL de tu Web App desplegada
 // ============================================================
 
-const GAS_URL = 'https://script.google.com/macros/s/AKfycbxTxeJFuJ72aGkPxsoXm-eppdAazifObwDX69oBbEr5jnSuS0Hi21daqW0Xut-ckI1zZw/exec';
+const GAS_URL = 'https://script.google.com/macros/s/AKfycbyEb34zc4zuOCicuypOLW1xq_2KA3UZ4EU-rV1ER5n7Aqzm0U0AmMPbgxEli5v_eyumKQ/exec';
 
 async function callAPI(action, payload = {}) {
   try {

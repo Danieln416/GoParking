@@ -20,7 +20,9 @@ import {
 import { Link } from 'react-router-dom';
 import { formatPeriodoLabel } from '../../utils/periodo.js';
 import { calcularFinPeriodo, calcularInicioPeriodo, getPeriodoKey, getPeriodoKeyForDate } from '../../utils/periodo.js';
-import { getReceiptMediaUrl } from '../../utils/media.js';
+import { getReceiptMediaUrl, normalizeMediaUrl } from '../../utils/media.js';
+
+const LOCAL_PARKING_MAP_URL = '/parqueadero.png';
 
 function vehicleIcon(tipo) {
   const tipoNormalizado = String(tipo || '').toLowerCase();
@@ -76,9 +78,14 @@ export default function UserDashboard() {
         if (mapa.success && mapa.url) {
           setMapUrl(normalizeMediaUrl(mapa.url));
           setMapError(false);
+        } else {
+          setMapUrl(LOCAL_PARKING_MAP_URL);
+          setMapError(false);
         }
       } catch (error) {
         console.error('Error al cargar el panel del usuario:', error);
+        setMapUrl(LOCAL_PARKING_MAP_URL);
+        setMapError(false);
       } finally {
         setLoading(false);
         setLoadingMapa(false);

@@ -21,6 +21,8 @@ import {
 } from '../../api.js';
 import { normalizeMediaUrl } from '../../utils/media.js';
 
+const LOCAL_PARKING_MAP_URL = '/parqueadero.png';
+
 export default function GestionPuestos() {
   const [puestos, setPuestos] = useState([]);
   const [config, setConfig] = useState({});
@@ -71,8 +73,13 @@ export default function GestionPuestos() {
       if (resMapa.success && resMapa.url) {
         setMapUrl(normalizeMediaUrl(resMapa.url));
         setMapError(false);
+      } else {
+        setMapUrl(LOCAL_PARKING_MAP_URL);
+        setMapError(false);
       }
     } catch {
+      setMapUrl(LOCAL_PARKING_MAP_URL);
+      setMapError(false);
       showToast('error', 'Error de conexión al cargar los puestos');
     } finally {
       setLoading(false);

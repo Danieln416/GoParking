@@ -2,7 +2,7 @@ import React, { useState, useRef } from 'react';
 import { Upload, Camera, Image, X, CheckCircle, AlertCircle } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext.jsx';
 import { apiSubirRecibo } from '../../api.js';
-import { calcularFechaFin, formatPeriodoLabel } from '../../utils/periodo.js';
+import { calcularFinPeriodo, calcularInicioPeriodo, formatPeriodoLabel } from '../../utils/periodo.js';
 
 const MESES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
 const TODAY = new Date().toISOString().slice(0, 10);
@@ -11,8 +11,8 @@ export default function SubirRecibo() {
   const { user } = useAuth();
   const [file, setFile] = useState(null);
   const [preview, setPreview] = useState(null);
-  const [fechaInicio, setFechaInicio] = useState(TODAY);
-  const [fechaFin, setFechaFin] = useState(calcularFechaFin(TODAY));
+  const [fechaInicio, setFechaInicio] = useState(calcularInicioPeriodo(TODAY));
+  const [fechaFin, setFechaFin] = useState(calcularFinPeriodo(TODAY));
   const [mes, setMes] = useState(new Date().getMonth() + 1);
   const [anio, setAnio] = useState(new Date().getFullYear());
   const [loading, setLoading] = useState(false);
@@ -91,9 +91,10 @@ export default function SubirRecibo() {
                   value={fechaInicio}
                   onChange={e => {
                     const value = e.target.value;
-                    const [year, month] = value.split('-').map(Number);
-                    setFechaInicio(value);
-                    setFechaFin(calcularFechaFin(value));
+                    const periodoInicio = calcularInicioPeriodo(value);
+                    const [year, month] = periodoInicio.split('-').map(Number);
+                    setFechaInicio(periodoInicio);
+                    setFechaFin(calcularFinPeriodo(periodoInicio));
                     setAnio(year || new Date().getFullYear());
                     setMes(month || new Date().getMonth() + 1);
                   }}

@@ -5,11 +5,39 @@
 const GAS_URL =
   'https://script.google.com/macros/s/AKfycbwjGgQoZkrz9MAvU4m9Yg-ylFfiXoybwlNbF5Z2l57KajSJzQfR31iCOIXARoJdCCpr4g/exec';
 
+const READ_CACHE_TTL = 30000;
+const readCache = new Map();
+const pendingReads = new Map();
+
+const READ_ACTIONS = new Set([
+  'getUsuarios',
+  'getRecibos',
+  'getPuestos',
+  'getPuestosUsuario',
+  'getSolicitudes',
+  'getCierreMes',
+  'getGastos',
+  'getParkingMapUrl'
+]);
+
 // ============================================================
 // UTILIDAD BASE
 // ============================================================
 
 async function callAPI(action, payload = {}) {
+  const cacheKey = JSON.stringify([action, payload]);
+  const isRead = READ_ACTIONS.has(action);
+  const cached = readCache.get(cacheKey);
+
+  if (isRead && cached && Date.now() - cached.timestamp < READ_CACHE_TTL) {
+    return cached.value;
+  }
+
+  if (isRead && pendingReads.has(cacheKey)) {
+    return pendingReads.get(cacheKey);
+  }
+
+  const request = (async () => {
   try {
     const response = await fetch(GAS_URL, {
       method: 'POST',
@@ -22,7 +50,11 @@ async function callAPI(action, payload = {}) {
     const text = await response.text();
 
     try {
-      return JSON.parse(text);
+      const value = JSON.parse(text);
+      if (isRead && value.success) {
+        readCache.set(cacheKey, { timestamp: Date.now(), value });
+      }
+      return value;
     } catch {
       return {
         success: false,
@@ -35,6 +67,18 @@ async function callAPI(action, payload = {}) {
       error: 'Error de red: ' + error.message
     };
   }
+  })();
+
+  if (isRead) {
+    pendingReads.set(cacheKey, request);
+    request.finally(() => pendingReads.delete(cacheKey));
+  }
+
+  return request;
+}
+
+function invalidateReads() {
+  readCache.clear();
 }
 
 // ============================================================
@@ -55,13 +99,13 @@ export const apiGetUsuarios = () =>
   callAPI('getUsuarios');
 
 export const apiCrearUsuario = data =>
-  callAPI('crearUsuario', data);
+  callAPI('crearUsuario', data).then(result => { invalidateReads(); return result; });
 
 export const apiActualizarUsuario = data =>
-  callAPI('actualizarUsuario', data);
+  callAPI('actualizarUsuario', data).then(result => { invalidateReads(); return result; });
 
 export const apiEliminarUsuario = id =>
-  callAPI('eliminarUsuario', { id });
+  callAPI('eliminarUsuario', { id }).then(result => { invalidateReads(); return result; });
 
 // ============================================================
 // RECIBOS
@@ -74,13 +118,13 @@ export const apiAprobarRecibo = (id, nota = '') =>
   callAPI('aprobarRecibo', {
     id,
     nota
-  });
+  }).then(result => { invalidateReads(); return result; });
 
 export const apiRechazarRecibo = (id, nota = '') =>
   callAPI('rechazarRecibo', {
     id,
     nota
-  });
+  }).then(result => { invalidateReads(); return result; });
 
 export const apiSubirRecibo = (
   userId,
@@ -112,6 +156,8 @@ export const apiSubirRecibo = (
         fileName: file.name,
         mimeType: file.type
       });
+
+      invalidateReads();
 
       resolve(result);
     };
@@ -153,10 +199,10 @@ export const apiAsignarPuestosUsuario = ({
   });
 
 export const apiUpdatePuesto = data =>
-  callAPI('updatePuesto', data);
+  callAPI('updatePuesto', data).then(result => { invalidateReads(); return result; });
 
 export const apiUpdateConfigPuestos = data =>
-  callAPI('updateConfigPuestos', data);
+  callAPI('updateConfigPuestos', data).then(result => { invalidateReads(); return result; });
 
 // ============================================================
 // SOLICITUDES
@@ -168,13 +214,13 @@ export const apiGetSolicitudes = (userId = 'all') =>
   });
 
 export const apiCrearSolicitud = data =>
-  callAPI('crearSolicitud', data);
+  callAPI('crearSolicitud', data).then(result => { invalidateReads(); return result; });
 
 export const apiResponderSolicitud = (id, respuesta) =>
   callAPI('responderSolicitud', {
     id,
     respuesta
-  });
+  }).then(result => { invalidateReads(); return result; });
 
 // ============================================================
 // CIERRE DE MES Y GASTOS
@@ -187,10 +233,16 @@ export const apiGetCierreMes = (startDate, endDate) =>
   });
 
 export const apiAgregarGasto = data =>
-  callAPI('agregarGasto', data);
+  callAPI('agregarGasto', data).then(result => { invalidateReads(); return result; });
 
 export const apiEliminarGasto = id =>
-  callAPI('eliminarGasto', { id });
+  callAPI('eliminarGasto', { id }).then(result => { invalidateReads(); return result; });
+
+export const apiCerrarMes = (startDate, endDate) =>
+  callAPI('cerrarMes', { startDate, endDate }).then(result => {
+    invalidateReads();
+    return result;
+  });
 
 export const apiGetGastos = (startDate, endDate) =>
   callAPI('getGastos', {

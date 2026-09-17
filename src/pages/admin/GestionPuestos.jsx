@@ -19,6 +19,7 @@ import {
   apiUpdateConfigPuestos,
   apiGetParkingMapUrl
 } from '../../api.js';
+import { normalizeMediaUrl } from '../../utils/media.js';
 
 export default function GestionPuestos() {
   const [puestos, setPuestos] = useState([]);
@@ -32,6 +33,7 @@ export default function GestionPuestos() {
   const [toast, setToast] = useState(null);
   const [tipoFiltro, setTipoFiltro] = useState('todos');
   const [estadoFiltro, setEstadoFiltro] = useState('todos');
+  const [mapError, setMapError] = useState(false);
 
   useEffect(() => {
     loadData();
@@ -67,7 +69,8 @@ export default function GestionPuestos() {
       }
 
       if (resMapa.success && resMapa.url) {
-        setMapUrl(resMapa.url);
+        setMapUrl(normalizeMediaUrl(resMapa.url));
+        setMapError(false);
       }
     } catch {
       showToast('error', 'Error de conexión al cargar los puestos');
@@ -312,7 +315,7 @@ export default function GestionPuestos() {
           </div>
         </div>
 
-        {mapUrl && (
+        {mapUrl && !mapError && (
           <div
             className="card"
             style={{
@@ -347,6 +350,7 @@ export default function GestionPuestos() {
             <img
               src={mapUrl}
               alt="Mapa del parqueadero"
+              onError={() => setMapError(true)}
               style={{
                 width: '100%',
                 maxHeight: 360,
@@ -354,6 +358,12 @@ export default function GestionPuestos() {
                 background: '#0a0e1a'
               }}
             />
+          </div>
+        )}
+
+        {mapError && (
+          <div className="card" style={{ marginBottom: 20, color: 'var(--text-secondary)' }}>
+            No fue posible cargar el mapa. Verifica que el archivo de Drive esté compartido y que el enlace corresponda a una imagen.
           </div>
         )}
 

@@ -19,6 +19,8 @@ import {
 } from '../../api.js';
 import { Link } from 'react-router-dom';
 import { formatPeriodoLabel } from '../../utils/periodo.js';
+import { calcularFinPeriodo, calcularInicioPeriodo, getPeriodoKey, getPeriodoKeyForDate } from '../../utils/periodo.js';
+import { getReceiptMediaUrl } from '../../utils/media.js';
 
 function vehicleIcon(tipo) {
   const tipoNormalizado = String(tipo || '').toLowerCase();
@@ -43,6 +45,8 @@ export default function UserDashboard() {
   const [mapUrl, setMapUrl] = useState('');
   const [loading, setLoading] = useState(true);
   const [loadingMapa, setLoadingMapa] = useState(true);
+  const [mapError, setMapError] = useState(false);
+  const [receiptImageError, setReceiptImageError] = useState(false);
 
   useEffect(() => {
     async function load() {
@@ -70,7 +74,8 @@ export default function UserDashboard() {
         }
 
         if (mapa.success && mapa.url) {
-          setMapUrl(mapa.url);
+          setMapUrl(normalizeMediaUrl(mapa.url));
+          setMapError(false);
         }
       } catch (error) {
         console.error('Error al cargar el panel del usuario:', error);
@@ -101,6 +106,11 @@ export default function UserDashboard() {
     (a, b) =>
       new Date(b.fecha_subida) - new Date(a.fecha_subida)
   )[0];
+
+  const periodoActual = getPeriodoKeyForDate(new Date());
+  const tieneReciboPeriodoActual = recibos.some(recibo => getPeriodoKey(recibo) === periodoActual);
+  const inicioPeriodoActual = calcularInicioPeriodo(new Date());
+  const finPeriodoActual = calcularFinPeriodo(new Date());
 
   const puestoCarro = puestosAsignados.find(
     puesto => normalizePuestoTipo(puesto.tipo) === 'carro'
@@ -137,6 +147,20 @@ export default function UserDashboard() {
       </div>
 
       <div className="page-body">
+        {!loading && !tieneReciboPeriodoActual && (
+          <div className="card" style={{ marginBottom: 24, borderColor: 'rgba(245,158,11,0.45)', background: 'rgba(245,158,11,0.08)' }}>
+            <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
+              <AlertCircle size={22} color="var(--accent-yellow)" />
+              <div style={{ flex: 1 }}>
+                <h3 style={{ fontSize: 15, marginBottom: 4 }}>Tienes un pago pendiente</h3>
+                <p style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 10 }}>
+                  No has subido el recibo del período del {new Date(`${inicioPeriodoActual}T00:00:00`).toLocaleDateString('es-CO')} al {new Date(`${finPeriodoActual}T00:00:00`).toLocaleDateString('es-CO')}.
+                </p>
+                <Link to="/usuario/subir-recibo" className="btn btn-primary btn-sm"><Upload size={14} /> Subir recibo</Link>
+              </div>
+            </div>
+          </div>
+        )}
         <div
           className="card"
           style={{
@@ -402,7 +426,7 @@ export default function UserDashboard() {
             >
               <div className="spinner" />
             </div>
-          ) : mapUrl ? (
+          ) : mapUrl && !mapError ? (
             <a
               href={mapUrl}
               target="_blank"
@@ -413,6 +437,7 @@ export default function UserDashboard() {
               <img
                 src={mapUrl}
                 alt="Mapa del parqueadero"
+                onError={() => setMapError(true)}
                 style={{
                   width: '100%',
                   maxHeight: 520,
@@ -515,15 +540,16 @@ export default function UserDashboard() {
               <StatusBadge estado={ultimoRecibo.estado} />
             </div>
 
-            {ultimoRecibo.url_imagen && (
+            {getReceiptMediaUrl(ultimoRecibo) && !receiptImageError && (
               <a
-                href={ultimoRecibo.url_imagen}
+                href={getReceiptMediaUrl(ultimoRecibo)}
                 target="_blank"
                 rel="noreferrer"
               >
                 <img
-                  src={ultimoRecibo.url_imagen}
+                  src={getReceiptMediaUrl(ultimoRecibo)}
                   alt="Recibo"
+                  onError={() => setReceiptImageError(true)}
                   style={{
                     width: '100%',
                     maxHeight: 200,
@@ -532,6 +558,12 @@ export default function UserDashboard() {
                     border: '1px solid var(--border)'
                   }}
                 />
+              </a>
+            )}
+
+            {getReceiptMediaUrl(ultimoRecibo) && (
+              <a href={getReceiptMediaUrl(ultimoRecibo)} target="_blank" rel="noreferrer" className="btn btn-ghost btn-sm" style={{ marginTop: 10 }}>
+                <Receipt size={14} /> Ver recibo original
               </a>
             )}
 

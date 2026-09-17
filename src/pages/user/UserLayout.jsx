@@ -20,9 +20,9 @@ export default function UserLayout() {
       <div className={`sidebar-overlay ${mobileMenuOpen ? 'active' : ''}`} onClick={() => setMobileMenuOpen(false)} />
       <aside className={`sidebar ${mobileMenuOpen ? 'open' : ''}`}>
         <div className="sidebar-logo">
-          <div className="sidebar-logo-icon"><Car size={22} color="#fff" /></div>
+          <div className="sidebar-logo-icon"><Car size={22} color="#fff" /><img className="brand-logo-image" src="/logo.png" alt="Logo" onError={event => { event.currentTarget.style.display = 'none'; }} /></div>
           <div className="sidebar-logo-text">
-            <h2>Parqueadero</h2>
+            <h2>GoParking</h2>
             <span>Portal de Usuario</span>
           </div>
         </div>

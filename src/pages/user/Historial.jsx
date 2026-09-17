@@ -3,6 +3,7 @@ import { Receipt, ExternalLink, Clock, CheckCircle, XCircle } from 'lucide-react
 import { useAuth } from '../../context/AuthContext.jsx';
 import { apiGetRecibos } from '../../api.js';
 import { formatPeriodoLabel } from '../../utils/periodo.js';
+import { getReceiptMediaUrl } from '../../utils/media.js';
 
 function StatusBadge({ estado }) {
   if (estado === 'aprobado') return <span className="badge badge-approved"><CheckCircle size={11} /> Aprobado</span>;
@@ -15,6 +16,8 @@ export default function Historial() {
   const [recibos, setRecibos] = useState([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState('todos');
+  const [startDate, setStartDate] = useState('');
+  const [endDate, setEndDate] = useState('');
 
   useEffect(() => {
     apiGetRecibos(user.id).then(res => {
@@ -26,7 +29,12 @@ export default function Historial() {
     });
   }, [user.id]);
 
-  const filtered = filter === 'todos' ? recibos : recibos.filter(r => r.estado === filter);
+  const filtered = recibos.filter(r => {
+    const date = r.fecha_subida ? new Date(r.fecha_subida) : null;
+    const from = startDate ? new Date(`${startDate}T00:00:00`) : null;
+    const to = endDate ? new Date(`${endDate}T23:59:59`) : null;
+    return (filter === 'todos' || r.estado === filter) && (!from || (date && date >= from)) && (!to || (date && date <= to));
+  });
 
   return (
     <div className="page-enter">
@@ -36,6 +44,10 @@ export default function Historial() {
 
       <div className="page-body">
         {/* Filtros */}
+        <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
+          <div className="form-group" style={{ marginBottom: 0 }}><label>Desde</label><input type="date" className="form-input" value={startDate} onChange={e => setStartDate(e.target.value)} /></div>
+          <div className="form-group" style={{ marginBottom: 0 }}><label>Hasta</label><input type="date" className="form-input" value={endDate} onChange={e => setEndDate(e.target.value)} /></div>
+        </div>
         <div style={{ display: 'flex', gap: 8, marginBottom: 20, flexWrap: 'wrap' }}>
           {[
             { key: 'todos', label: 'Todos', count: recibos.length },
@@ -66,10 +78,10 @@ export default function Historial() {
             {filtered.map(recibo => (
               <div key={recibo.id} className="card" style={{ display: 'flex', alignItems: 'flex-start', gap: 20 }}>
                 {/* Preview imagen */}
-                {recibo.url_imagen ? (
-                  <a href={recibo.url_imagen} target="_blank" rel="noreferrer" style={{ flexShrink: 0 }}>
+                {getReceiptMediaUrl(recibo) ? (
+                  <a href={getReceiptMediaUrl(recibo)} target="_blank" rel="noreferrer" style={{ flexShrink: 0 }}>
                     <img
-                      src={recibo.url_imagen}
+                      src={getReceiptMediaUrl(recibo)}
                       alt="recibo"
                       style={{ width: 80, height: 80, objectFit: 'cover', borderRadius: 10, border: '1px solid var(--border)' }}
                     />
@@ -107,9 +119,9 @@ export default function Historial() {
                   )}
                 </div>
 
-                {recibo.url_imagen && (
-                  <a href={recibo.url_imagen} target="_blank" rel="noreferrer" className="btn btn-ghost btn-icon" title="Ver recibo">
-                    <ExternalLink size={16} />
+                {getReceiptMediaUrl(recibo) && (
+                  <a href={getReceiptMediaUrl(recibo)} target="_blank" rel="noreferrer" className="btn btn-ghost btn-sm" title="Ver recibo">
+                    <ExternalLink size={16} /> Ver recibo
                   </a>
                 )}
               </div>

@@ -32,6 +32,18 @@ export function calcularFechaFin(fechaInicio) {
   return formatDateInput(end);
 }
 
+export function calcularInicioPeriodo(fecha = new Date()) {
+  const date = typeof fecha === 'string' ? parseDate(fecha) : fecha;
+  if (!date) return '';
+  const start = new Date(date.getFullYear(), date.getMonth(), date.getDate() >= 12 ? 12 : 12);
+  if (date.getDate() < 12) start.setMonth(start.getMonth() - 1);
+  return formatDateInput(start);
+}
+
+export function calcularFinPeriodo(fecha = new Date()) {
+  return calcularFechaFin(calcularInicioPeriodo(fecha));
+}
+
 export function formatPeriodoLabel(recibo = {}) {
   const start = parseDate(recibo.fecha_inicio || recibo.periodo_inicio || recibo.inicio_periodo);
   const end = parseDate(recibo.fecha_fin || recibo.periodo_fin || recibo.fin_periodo);
@@ -53,4 +65,35 @@ export function formatPeriodoLabel(recibo = {}) {
   }
 
   return 'Periodo no definido';
+}
+
+export function getPeriodoKey(value = {}) {
+  const start = parseDate(value.fecha_inicio || value.periodo_inicio || value.inicio_periodo);
+  if (start) return `${start.getFullYear()}-${String(start.getMonth() + 1).padStart(2, '0')}`;
+
+  const mes = Number(value.mes);
+  const anio = Number(value.anio);
+  return mes && anio ? `${anio}-${String(mes).padStart(2, '0')}` : '';
+}
+
+export function getPeriodoKeyForDate(value) {
+  return getPeriodoKey({ fecha_inicio: calcularInicioPeriodo(value) });
+}
+
+export function getClosedPeriods() {
+  try {
+    return JSON.parse(localStorage.getItem('goparking-periodos-cerrados') || '[]');
+  } catch {
+    return [];
+  }
+}
+
+export function saveClosedPeriod(startDate, endDate) {
+  const key = getPeriodoKey({ fecha_inicio: startDate, fecha_fin: endDate });
+  if (!key) return;
+
+  const periods = new Set(getClosedPeriods());
+  periods.add(key);
+  localStorage.setItem('goparking-periodos-cerrados', JSON.stringify([...periods]));
+  window.dispatchEvent(new CustomEvent('goparking-period-closed'));
 }

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Calculator, Plus, Trash2, TrendingUp, TrendingDown, DollarSign, CheckCircle, AlertCircle, X, Download } from 'lucide-react';
-import { apiGetCierreMes, apiAgregarGasto, apiEliminarGasto } from '../../api.js';
+import { apiGetCierreMes, apiAgregarGasto, apiEliminarGasto, apiCerrarMes } from '../../api.js';
+import { saveClosedPeriod } from '../../utils/periodo.js';
 
 const getFormattedDate = (date) => {
   return date.toISOString().split('T')[0];
@@ -58,6 +59,24 @@ export default function CierreMes() {
     else showToast('error', res.error || 'Error');
   }
 
+  async function handleCerrarMes() {
+    if (!startDate || !endDate) {
+      showToast('error', 'Selecciona el rango que deseas cerrar');
+      return;
+    }
+    if (!confirm(`¿Cerrar el período del ${startDate} al ${endDate}? Los recibos quedarán ocultos por defecto.`)) return;
+
+    setSaving(true);
+    const res = await apiCerrarMes(startDate, endDate);
+    if (res.success) {
+      saveClosedPeriod(startDate, endDate);
+      showToast('success', 'Período cerrado correctamente');
+    } else {
+      showToast('error', res.error || 'El backend no pudo cerrar este período');
+    }
+    setSaving(false);
+  }
+
   function showToast(type, msg) {
     setToast({ type, msg });
     setTimeout(() => setToast(null), 3500);
@@ -108,6 +127,9 @@ export default function CierreMes() {
             <button className="btn btn-primary" onClick={loadCierre} disabled={loading}>
               {loading ? <span className="spinner" style={{ width: 16, height: 16, borderWidth: 2 }} /> : <Calculator size={16} />}
               Calcular
+            </button>
+            <button className="btn btn-danger" onClick={handleCerrarMes} disabled={loading || saving || !datos}>
+              <CheckCircle size={16} /> Cerrar período
             </button>
           </div>
         </div>

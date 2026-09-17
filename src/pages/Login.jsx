@@ -37,8 +37,9 @@ export default function Login() {
         <div className="login-logo">
           <div className="login-icon-wrapper">
             <Car size={36} color="#fff" />
+            <img className="brand-logo-image" src="/logo.png" alt="Logo" onError={event => { event.currentTarget.style.display = 'none'; }} />
           </div>
-          <h1>Parqueadero</h1>
+          <h1>GoParking</h1>
           <p>Sistema de Gestión</p>
         </div>
 

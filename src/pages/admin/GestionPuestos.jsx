@@ -1,6 +1,5 @@
 import React, { useEffect, useState } from 'react';
 import {
-  MapPin,
   Settings,
   RefreshCw,
   Car,
@@ -16,10 +15,8 @@ import {
 import {
   apiGetPuestos,
   apiUpdatePuesto,
-  apiUpdateConfigPuestos,
-  apiGetParkingMapUrl
+  apiUpdateConfigPuestos
 } from '../../api.js';
-import { normalizeMediaUrl } from '../../utils/media.js';
 
 const LOCAL_PARKING_MAP_URL = '/parqueadero.png';
 
@@ -45,10 +42,7 @@ export default function GestionPuestos() {
     setLoading(true);
 
     try {
-      const [resPuestos, resMapa] = await Promise.all([
-        apiGetPuestos(),
-        apiGetParkingMapUrl()
-      ]);
+      const resPuestos = await apiGetPuestos();
 
       if (resPuestos.success) {
         const nuevaConfig = resPuestos.config || {};
@@ -70,13 +64,8 @@ export default function GestionPuestos() {
         );
       }
 
-      if (resMapa.success && resMapa.url) {
-        setMapUrl(normalizeMediaUrl(resMapa.url));
-        setMapError(false);
-      } else {
-        setMapUrl(LOCAL_PARKING_MAP_URL);
-        setMapError(false);
-      }
+      setMapUrl(LOCAL_PARKING_MAP_URL);
+      setMapError(false);
     } catch {
       setMapUrl(LOCAL_PARKING_MAP_URL);
       setMapError(false);

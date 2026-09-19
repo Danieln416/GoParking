@@ -14,13 +14,12 @@ import { useAuth } from '../../context/AuthContext.jsx';
 import {
   apiGetRecibos,
   apiGetSolicitudes,
-  apiGetPuestosUsuario,
-  apiGetParkingMapUrl
+  apiGetPuestosUsuario
 } from '../../api.js';
 import { Link } from 'react-router-dom';
 import { formatPeriodoLabel } from '../../utils/periodo.js';
 import { calcularFinPeriodo, calcularInicioPeriodo, getPeriodoKey, getPeriodoKeyForDate } from '../../utils/periodo.js';
-import { getReceiptMediaUrl, normalizeMediaUrl } from '../../utils/media.js';
+import { getReceiptMediaUrl } from '../../utils/media.js';
 
 const LOCAL_PARKING_MAP_URL = '/parqueadero.png';
 
@@ -56,11 +55,14 @@ export default function UserDashboard() {
       setLoadingMapa(true);
 
       try {
-        const [r, s, p, mapa] = await Promise.all([
+        setMapUrl(LOCAL_PARKING_MAP_URL);
+        setMapError(false);
+        setLoadingMapa(false);
+
+        const [r, s, p] = await Promise.all([
           apiGetRecibos(user.id),
           apiGetSolicitudes(user.id),
-          apiGetPuestosUsuario(user.id),
-          apiGetParkingMapUrl()
+          apiGetPuestosUsuario(user.id)
         ]);
 
         if (r.success) {
@@ -75,13 +77,6 @@ export default function UserDashboard() {
           setPuestosAsignados(p.data || []);
         }
 
-        if (mapa.success && mapa.url) {
-          setMapUrl(normalizeMediaUrl(mapa.url));
-          setMapError(false);
-        } else {
-          setMapUrl(LOCAL_PARKING_MAP_URL);
-          setMapError(false);
-        }
       } catch (error) {
         console.error('Error al cargar el panel del usuario:', error);
         setMapUrl(LOCAL_PARKING_MAP_URL);

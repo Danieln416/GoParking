@@ -3,14 +3,16 @@
 // ============================================================
 
 const GAS_URL =
-  'https://script.google.com/macros/s/AKfycbwjGgQoZkrz9MAvU4m9Yg-ylFfiXoybwlNbF5Z2l57KajSJzQfR31iCOIXARoJdCCpr4g/exec';
+  'https://script.google.com/macros/s/AKfycbzmLzNwfJuD4p6sSkE82xhxCGV7-M_CMVKbrXosv6hua2qsYvRWGvMmSl0RO4oiDDY2-A/exec';
 
-const READ_CACHE_TTL = 30000;
+const READ_CACHE_TTL = 10000;
+const API_TIMEOUT_MS = 15000;
 const readCache = new Map();
 const pendingReads = new Map();
 
 const READ_ACTIONS = new Set([
   'getUsuarios',
+  'getAdminResumen',
   'getRecibos',
   'getPuestos',
   'getPuestosUsuario',
@@ -20,11 +22,27 @@ const READ_ACTIONS = new Set([
   'getParkingMapUrl'
 ]);
 
+function clearExpiredReadCache() {
+  const now = Date.now();
+
+  for (const [key, entry] of readCache.entries()) {
+    if (now - entry.timestamp >= READ_CACHE_TTL) {
+      readCache.delete(key);
+    }
+  }
+}
+
+if (typeof window !== 'undefined') {
+  window.setInterval(clearExpiredReadCache, READ_CACHE_TTL);
+}
+
 // ============================================================
 // UTILIDAD BASE
 // ============================================================
 
 async function callAPI(action, payload = {}) {
+  clearExpiredReadCache();
+
   const cacheKey = JSON.stringify([action, payload]);
   const isRead = READ_ACTIONS.has(action);
   const cached = readCache.get(cacheKey);
@@ -38,35 +56,54 @@ async function callAPI(action, payload = {}) {
   }
 
   const request = (async () => {
-  try {
-    const response = await fetch(GAS_URL, {
-      method: 'POST',
-      body: JSON.stringify({
+    const controller = new AbortController();
+    const timeoutId = window.setTimeout(() => controller.abort(), API_TIMEOUT_MS);
+    const useGet = action === 'getAdminResumen';
+    const requestUrl = useGet
+      ? `${GAS_URL}?action=${encodeURIComponent(action)}`
+      : GAS_URL;
+    const requestOptions = {
+      method: useGet ? 'GET' : 'POST',
+      cache: 'no-store',
+      signal: controller.signal
+    };
+
+    if (!useGet) {
+      requestOptions.body = JSON.stringify({
         action,
         ...payload
-      })
-    });
-
-    const text = await response.text();
+      });
+    }
 
     try {
-      const value = JSON.parse(text);
-      if (isRead && value.success) {
-        readCache.set(cacheKey, { timestamp: Date.now(), value });
+      const response = await fetch(requestUrl, requestOptions);
+
+      const text = await response.text();
+
+      try {
+        const value = JSON.parse(text);
+        if (isRead && value.success) {
+          readCache.set(cacheKey, { timestamp: Date.now(), value });
+        }
+        return value;
+      } catch {
+        return {
+          success: false,
+          error: 'Respuesta inválida del servidor: ' + text
+        };
       }
-      return value;
-    } catch {
+    } catch (error) {
+      const message = error.name === 'AbortError'
+        ? 'El servidor tardó demasiado en responder'
+        : 'Error de red: ' + error.message;
+
       return {
         success: false,
-        error: 'Respuesta inválida del servidor: ' + text
+        error: message
       };
+    } finally {
+      window.clearTimeout(timeoutId);
     }
-  } catch (error) {
-    return {
-      success: false,
-      error: 'Error de red: ' + error.message
-    };
-  }
   })();
 
   if (isRead) {
@@ -97,6 +134,40 @@ export const apiLogin = (correo, contrasena) =>
 
 export const apiGetUsuarios = () =>
   callAPI('getUsuarios');
+
+export const apiGetAdminResumen = () =>
+  callAPI('getAdminResumen').then(result => {
+    if (result.success || !String(result.error || '').includes('Acción no reconocida')) {
+      return result;
+    }
+
+    return Promise.all([
+      callAPI('getUsuarios'),
+      callAPI('getRecibos', { userId: 'all' }),
+      callAPI('getPuestos'),
+      callAPI('getSolicitudes', { userId: 'all' })
+    ]).then(([usuarios, recibos, puestos, solicitudes]) => {
+      const listaRecibos = recibos.success ? recibos.data || [] : [];
+      const listaPuestos = puestos.success ? puestos.data || [] : [];
+      const listaSolicitudes = solicitudes.success ? solicitudes.data || [] : [];
+
+      return {
+        success: true,
+        data: {
+          usuarios: usuarios.success ? (usuarios.data || []).length : 0,
+          recibosTotal: listaRecibos.length,
+          enRevision: listaRecibos.filter(item => item.estado === 'en_revision').length,
+          aprobados: listaRecibos.filter(item => item.estado === 'aprobado').length,
+          puestosLibres: listaPuestos.filter(item => item.estado === 'libre').length,
+          puestosOcupados: listaPuestos.filter(item => item.estado === 'ocupado').length,
+          solicitudesPendientes: listaSolicitudes.filter(item => item.estado === 'pendiente').length,
+          recientesRecibos: [...listaRecibos]
+            .sort((a, b) => new Date(b.fecha_subida) - new Date(a.fecha_subida))
+            .slice(0, 5)
+        }
+      };
+    });
+  });
 
 export const apiCrearUsuario = data =>
   callAPI('crearUsuario', data).then(result => { invalidateReads(); return result; });

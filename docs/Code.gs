@@ -29,6 +29,10 @@ function doPost(e) {
         result = getUsuarios();
         break;
 
+      case 'getAdminResumen':
+        result = getAdminResumen();
+        break;
+
       case 'crearUsuario':
         result = crearUsuario(data);
         break;
@@ -152,6 +156,10 @@ function doGet(e) {
     });
   }
 
+  if (action === 'getAdminResumen') {
+    return buildResponse(getAdminResumen());
+  }
+
   return ContentService.createTextOutput('Parking App API v1.0');
 }
 
@@ -183,6 +191,8 @@ function initSheets() {
       'tipo_vehiculo',
       'tipo_tarifa',
       'valor_tarifa',
+      'fecha_inicio',
+      'fecha_fin',
       'contrasena',
       'rol',
       'fecha_creacion',
@@ -566,6 +576,8 @@ function userPublicData(usuario) {
     tipo_vehiculo: usuario.tipo_vehiculo || '',
     tipo_tarifa: usuario.tipo_tarifa || '',
     valor_tarifa: usuario.valor_tarifa || 0,
+    fecha_inicio: usuario.fecha_inicio || '',
+    fecha_fin: usuario.fecha_fin || '',
     rol: usuario.rol || '',
     fecha_creacion: usuario.fecha_creacion || ''
   };
@@ -689,6 +701,8 @@ function crearUsuario(data) {
     tipo_vehiculo: validacion.tipoVehiculo,
     tipo_tarifa: String(data.tipo_tarifa || '').trim(),
     valor_tarifa: data.valor_tarifa || 0,
+    fecha_inicio: data.fecha_inicio || '',
+    fecha_fin: data.fecha_fin || '',
     contrasena: hashPassword(password),
     rol: 'usuario',
     fecha_creacion: new Date().toISOString(),
@@ -833,7 +847,13 @@ function actualizarUsuario(data) {
     ).trim(),
     valor_tarifa: data.valor_tarifa !== undefined
       ? data.valor_tarifa
-      : usuarioActual.valor_tarifa || 0
+      : usuarioActual.valor_tarifa || 0,
+    fecha_inicio: data.fecha_inicio !== undefined
+      ? data.fecha_inicio
+      : usuarioActual.fecha_inicio || '',
+    fecha_fin: data.fecha_fin !== undefined
+      ? data.fecha_fin
+      : usuarioActual.fecha_fin || ''
   };
 
   if (data.contrasena) {
@@ -1624,4 +1644,36 @@ function asegurarHojaCierres() {
   }
 
   return sheet;
+}
+
+function getAdminResumen() {
+  const usuarios = sheetToObjects(getSheet('usuarios'))
+    .filter(usuario => isActivo(usuario.activo));
+  const recibos = sheetToObjects(getSheet('recibos'));
+  const puestos = sheetToObjects(getSheet('puestos'));
+  const solicitudes = sheetToObjects(getSheet('solicitudes'));
+
+  const recientesRecibos = recibos
+    .sort((a, b) => new Date(b.fecha_subida) - new Date(a.fecha_subida))
+    .slice(0, 5)
+    .map(recibo => ({
+      id: recibo.id,
+      usuario_nombre: recibo.usuario_nombre,
+      fecha_subida: recibo.fecha_subida,
+      estado: recibo.estado
+    }));
+
+  return {
+    success: true,
+    data: {
+      usuarios: usuarios.length,
+      recibosTotal: recibos.length,
+      enRevision: recibos.filter(recibo => recibo.estado === 'en_revision').length,
+      aprobados: recibos.filter(recibo => recibo.estado === 'aprobado').length,
+      puestosLibres: puestos.filter(puesto => puesto.estado === 'libre').length,
+      puestosOcupados: puestos.filter(puesto => puesto.estado === 'ocupado').length,
+      solicitudesPendientes: solicitudes.filter(solicitud => solicitud.estado === 'pendiente').length,
+      recientesRecibos
+    }
+  };
 }

@@ -1,32 +1,41 @@
 import React, { useEffect, useState } from 'react';
 import { Users, Receipt, MapPin, CheckCircle, Clock, MessageSquare, TrendingUp } from 'lucide-react';
-import { apiGetUsuarios, apiGetRecibos, apiGetPuestos, apiGetSolicitudes } from '../../api.js';
+import { apiGetAdminResumen } from '../../api.js';
 import { Link } from 'react-router-dom';
 
 export default function AdminDashboard() {
   const [stats, setStats] = useState({ usuarios: 0, recibosTotal: 0, enRevision: 0, aprobados: 0, puestosLibres: 0, puestosOcupados: 0, solicitudesPendientes: 0 });
   const [recientesRecibos, setRecientesRecibos] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
 
   useEffect(() => {
     async function load() {
-      const [u, r, p, s] = await Promise.all([
-        apiGetUsuarios(), apiGetRecibos('all'), apiGetPuestos(), apiGetSolicitudes('all')
-      ]);
-      const recibos = r.success ? r.data : [];
-      const puestos = p.success ? p.data : [];
-      const solicitudes = s.success ? s.data : [];
-      setStats({
-        usuarios: u.success ? u.data.length : 0,
-        recibosTotal: recibos.length,
-        enRevision: recibos.filter(x => x.estado === 'en_revision').length,
-        aprobados: recibos.filter(x => x.estado === 'aprobado').length,
-        puestosLibres: puestos.filter(x => x.estado === 'libre').length,
-        puestosOcupados: puestos.filter(x => x.estado === 'ocupado').length,
-        solicitudesPendientes: solicitudes.filter(x => x.estado === 'pendiente').length,
-      });
-      setRecientesRecibos([...recibos].sort((a, b) => new Date(b.fecha_subida) - new Date(a.fecha_subida)).slice(0, 5));
-      setLoading(false);
+      try {
+        const response = await apiGetAdminResumen();
+
+        if (response.success) {
+          const resumen = response.data || {};
+          setStats({
+            usuarios: resumen.usuarios || 0,
+            recibosTotal: resumen.recibosTotal || 0,
+            enRevision: resumen.enRevision || 0,
+            aprobados: resumen.aprobados || 0,
+            puestosLibres: resumen.puestosLibres || 0,
+            puestosOcupados: resumen.puestosOcupados || 0,
+            solicitudesPendientes: resumen.solicitudesPendientes || 0
+          });
+          setRecientesRecibos(resumen.recientesRecibos || []);
+          setLoadError('');
+        } else {
+          setLoadError(response.error || 'No fue posible cargar los datos del panel');
+        }
+      } catch (error) {
+        console.error('Error al cargar el panel administrativo:', error);
+        setLoadError('No fue posible conectar con el servidor');
+      } finally {
+        setLoading(false);
+      }
     }
     load();
   }, []);
@@ -43,6 +52,19 @@ export default function AdminDashboard() {
       </div>
 
       <div className="page-body">
+        {loadError && (
+          <div
+            className="card"
+            style={{
+              marginBottom: 20,
+              color: 'var(--accent-red)',
+              borderColor: 'rgba(239,68,68,0.35)'
+            }}
+          >
+            {loadError}. Los valores mostrados pueden estar desactualizados.
+          </div>
+        )}
+
         <div className="stats-grid">
           <div className="stat-card cyan">
             <div className="stat-icon cyan"><Users size={22} /></div>

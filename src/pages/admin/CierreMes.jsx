@@ -1,20 +1,20 @@
 import React, { useState, useEffect } from 'react';
 import { Calculator, Plus, Trash2, TrendingUp, TrendingDown, DollarSign, CheckCircle, AlertCircle, X, Download } from 'lucide-react';
 import { apiGetCierreMes, apiAgregarGasto, apiEliminarGasto, apiCerrarMes } from '../../api.js';
-import { saveClosedPeriod } from '../../utils/periodo.js';
+import { calcularFinPeriodo, calcularInicioPeriodo, saveClosedPeriod } from '../../utils/periodo.js';
 
 const getFormattedDate = (date) => {
   return date.toISOString().split('T')[0];
 };
 
 export default function CierreMes() {
-  const todayStr = getFormattedDate(new Date());
-  const thirtyDaysAgo = new Date();
-  thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-  const thirtyDaysAgoStr = getFormattedDate(thirtyDaysAgo);
+  const today = new Date();
+  const todayStr = getFormattedDate(today);
+  const currentPeriodStart = calcularInicioPeriodo(today);
+  const currentPeriodEnd = calcularFinPeriodo(today);
 
-  const [startDate, setStartDate] = useState(thirtyDaysAgoStr);
-  const [endDate, setEndDate] = useState(todayStr);
+  const [startDate, setStartDate] = useState(currentPeriodStart);
+  const [endDate, setEndDate] = useState(currentPeriodEnd);
   const [datos, setDatos] = useState(null);
   const [loading, setLoading] = useState(false);
   const [showAddGasto, setShowAddGasto] = useState(false);
@@ -104,7 +104,7 @@ export default function CierreMes() {
         {/* Selector de período móvil */}
         <div className="card" style={{ marginBottom: 20 }}>
           <h3 className="card-title">Seleccionar rango de fechas</h3>
-          <p className="card-subtitle">Se calcularán los ingresos y gastos registrados entre estas fechas (inclusive)</p>
+          <p className="card-subtitle">Período general del parqueadero: del 12 al 11 del siguiente mes</p>
           <div style={{ display: 'flex', gap: 12, alignItems: 'flex-end', flexWrap: 'wrap' }}>
             <div className="form-group" style={{ marginBottom: 0, minWidth: 160 }}>
               <label>Fecha de Inicio</label>

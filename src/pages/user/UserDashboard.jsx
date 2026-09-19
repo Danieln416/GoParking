@@ -18,7 +18,7 @@ import {
 } from '../../api.js';
 import { Link } from 'react-router-dom';
 import { formatPeriodoLabel } from '../../utils/periodo.js';
-import { calcularFinPeriodo, calcularInicioPeriodo, getPeriodoKey, getPeriodoKeyForDate } from '../../utils/periodo.js';
+import { calcularFinPeriodoUsuario, calcularInicioPeriodoUsuario, getPeriodoKey, getPeriodoKeyForUser } from '../../utils/periodo.js';
 import { getReceiptMediaUrl } from '../../utils/media.js';
 
 const LOCAL_PARKING_MAP_URL = '/parqueadero.png';
@@ -109,10 +109,10 @@ export default function UserDashboard() {
       new Date(b.fecha_subida) - new Date(a.fecha_subida)
   )[0];
 
-  const periodoActual = getPeriodoKeyForDate(new Date());
+  const periodoActual = getPeriodoKeyForUser(new Date(), user?.fecha_inicio);
   const tieneReciboPeriodoActual = recibos.some(recibo => getPeriodoKey(recibo) === periodoActual);
-  const inicioPeriodoActual = calcularInicioPeriodo(new Date());
-  const finPeriodoActual = calcularFinPeriodo(new Date());
+  const inicioPeriodoActual = calcularInicioPeriodoUsuario(new Date(), user?.fecha_inicio);
+  const finPeriodoActual = calcularFinPeriodoUsuario(new Date(), user?.fecha_inicio);
 
   const puestoCarro = puestosAsignados.find(
     puesto => normalizePuestoTipo(puesto.tipo) === 'carro'

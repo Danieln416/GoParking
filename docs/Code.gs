@@ -345,6 +345,8 @@ function asegurarColumnasUsuarios() {
     'tipo_vehiculo',
     'tipo_tarifa',
     'valor_tarifa',
+    'fecha_inicio',
+    'fecha_fin',
     'contrasena',
     'rol',
     'fecha_creacion',

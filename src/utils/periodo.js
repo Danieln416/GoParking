@@ -40,6 +40,34 @@ export function calcularInicioPeriodo(fecha = new Date()) {
   return formatDateInput(start);
 }
 
+function addMonthsKeepingDay(date, months, day) {
+  const target = new Date(date.getFullYear(), date.getMonth() + months, 1);
+  const lastDay = new Date(target.getFullYear(), target.getMonth() + 1, 0).getDate();
+  return new Date(target.getFullYear(), target.getMonth(), Math.min(day, lastDay));
+}
+
+export function calcularInicioPeriodoUsuario(fecha = new Date(), fechaInicioUsuario) {
+  const date = typeof fecha === 'string' ? parseDate(fecha) : fecha;
+  const userStart = parseDate(fechaInicioUsuario);
+
+  if (!date || !userStart) return calcularInicioPeriodo(fecha);
+
+  const billingDay = userStart.getDate();
+  let start = addMonthsKeepingDay(date, 0, billingDay);
+
+  if (date < start) {
+    start = addMonthsKeepingDay(date, -1, billingDay);
+  }
+
+  if (start < userStart) return formatDateInput(userStart);
+  return formatDateInput(start);
+}
+
+export function calcularFinPeriodoUsuario(fecha = new Date(), fechaInicioUsuario) {
+  const start = calcularInicioPeriodoUsuario(fecha, fechaInicioUsuario);
+  return calcularFechaFin(start);
+}
+
 export function calcularFinPeriodo(fecha = new Date()) {
   return calcularFechaFin(calcularInicioPeriodo(fecha));
 }
@@ -69,15 +97,21 @@ export function formatPeriodoLabel(recibo = {}) {
 
 export function getPeriodoKey(value = {}) {
   const start = parseDate(value.fecha_inicio || value.periodo_inicio || value.inicio_periodo);
-  if (start) return `${start.getFullYear()}-${String(start.getMonth() + 1).padStart(2, '0')}`;
+  if (start) return formatDateInput(start);
 
   const mes = Number(value.mes);
   const anio = Number(value.anio);
-  return mes && anio ? `${anio}-${String(mes).padStart(2, '0')}` : '';
+  return mes && anio ? `${anio}-${String(mes).padStart(2, '0')}-12` : '';
 }
 
 export function getPeriodoKeyForDate(value) {
   return getPeriodoKey({ fecha_inicio: calcularInicioPeriodo(value) });
+}
+
+export function getPeriodoKeyForUser(value, fechaInicioUsuario) {
+  return getPeriodoKey({
+    fecha_inicio: calcularInicioPeriodoUsuario(value, fechaInicioUsuario)
+  });
 }
 
 export function getClosedPeriods() {

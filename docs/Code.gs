@@ -134,7 +134,8 @@ function doPost(e) {
 }
 
 function doGet(e) {
-  const action = (e && e.parameter && e.parameter.action) || '';
+  const data = (e && e.parameter) || {};
+  const action = data.action || '';
 
   if (action === 'initSheets') {
     initSheets();
@@ -158,6 +159,38 @@ function doGet(e) {
 
   if (action === 'getAdminResumen') {
     return buildResponse(getAdminResumen());
+  }
+
+  if (action === 'login') {
+    return buildResponse(login(data));
+  }
+
+  if (action === 'getUsuarios') {
+    return buildResponse(getUsuarios());
+  }
+
+  if (action === 'getRecibos') {
+    return buildResponse(getRecibos(data));
+  }
+
+  if (action === 'getPuestos') {
+    return buildResponse(getPuestos());
+  }
+
+  if (action === 'getPuestosUsuario') {
+    return buildResponse(getPuestosUsuario(data));
+  }
+
+  if (action === 'getSolicitudes') {
+    return buildResponse(getSolicitudes(data));
+  }
+
+  if (action === 'getCierreMes') {
+    return buildResponse(getCierreMes(data));
+  }
+
+  if (action === 'getGastos') {
+    return buildResponse(getGastos(data));
   }
 
   return ContentService.createTextOutput('Parking App API v1.0');

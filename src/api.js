@@ -58,17 +58,21 @@ async function callAPI(action, payload = {}) {
   const request = (async () => {
     const controller = new AbortController();
     const timeoutId = window.setTimeout(() => controller.abort(), API_TIMEOUT_MS);
-    const requestUrl = GAS_URL;
+    const useGet = isRead || action === 'login';
+    const query = new URLSearchParams({
+      action,
+      ...payload
+    });
+    const requestUrl = useGet ? `${GAS_URL}?${query}` : GAS_URL;
     const requestOptions = {
-      method: 'POST',
+      method: useGet ? 'GET' : 'POST',
       cache: 'no-store',
       signal: controller.signal
     };
 
-    requestOptions.body = JSON.stringify({
-      action,
-      ...payload
-    });
+    if (!useGet) {
+      requestOptions.body = JSON.stringify({ action, ...payload });
+    }
 
     try {
       const response = await fetch(requestUrl, requestOptions);

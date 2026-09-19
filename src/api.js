@@ -58,22 +58,17 @@ async function callAPI(action, payload = {}) {
   const request = (async () => {
     const controller = new AbortController();
     const timeoutId = window.setTimeout(() => controller.abort(), API_TIMEOUT_MS);
-    const useGet = action === 'getAdminResumen';
-    const requestUrl = useGet
-      ? `${GAS_URL}?action=${encodeURIComponent(action)}`
-      : GAS_URL;
+    const requestUrl = GAS_URL;
     const requestOptions = {
-      method: useGet ? 'GET' : 'POST',
+      method: 'POST',
       cache: 'no-store',
       signal: controller.signal
     };
 
-    if (!useGet) {
-      requestOptions.body = JSON.stringify({
-        action,
-        ...payload
-      });
-    }
+    requestOptions.body = JSON.stringify({
+      action,
+      ...payload
+    });
 
     try {
       const response = await fetch(requestUrl, requestOptions);

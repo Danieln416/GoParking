@@ -16,7 +16,7 @@ import {
   apiGetPuestos,
   apiAsignarPuestosUsuario
 } from '../../api.js';
-import { parseDate } from '../../utils/periodo.js';
+import { parseDate, formatDateInput } from '../../utils/periodo.js';
 
 const TIPOS_VEHICULO = [
   { value: '', label: 'Sin vehículo / Sin asignación' },
@@ -161,7 +161,7 @@ export default function GestionUsuarios() {
         placa_moto: usuario.placa_moto || '',
         valor_tarifa: usuario.valor_tarifa ?? '',
         contrasena: '',
-        fecha_inicio: usuario.fecha_inicio || TODAY,
+        fecha_inicio: formatDateInput(usuario.fecha_inicio) || TODAY,
         tipo_vehiculo: tipoVehiculo,
         puestoCarroId: puestoCarro?.id || '',
         puestoMotoId: puestoMoto?.id || ''
@@ -171,14 +171,6 @@ export default function GestionUsuarios() {
         showToast(
           'error',
           resPuestos.error || 'No fue posible cargar los puestos'
-        );
-      }
-
-      if (!resPuestosUsuario.success) {
-        showToast(
-          'error',
-          resPuestosUsuario.error ||
-            'No fue posible cargar los puestos del usuario'
         );
       }
     } catch {

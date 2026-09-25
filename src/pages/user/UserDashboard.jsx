@@ -14,7 +14,8 @@ import { useAuth } from '../../context/AuthContext.jsx';
 import {
   apiGetRecibos,
   apiGetSolicitudes,
-  apiGetPuestosUsuario
+  apiGetPuestosUsuario,
+  apiGetPuestos
 } from '../../api.js';
 import { Link } from 'react-router-dom';
 import { formatPeriodoLabel, formatDateLabel, getUserBillingInfo } from '../../utils/periodo.js';
@@ -36,12 +37,351 @@ function normalizePuestoTipo(tipo) {
   return String(tipo || '').toLowerCase().trim();
 }
 
+function getVecinosPuesto(miPuesto, puestos) {
+  if (!miPuesto || !puestos?.length) return null;
+  const tipoTarget = normalizePuestoTipo(miPuesto.tipo);
+  const spotsSameType = puestos
+    .filter(p => normalizePuestoTipo(p.tipo) === tipoTarget)
+    .sort((a, b) => Number(a.numero) - Number(b.numero));
+
+  const myIndex = spotsSameType.findIndex(
+    p => String(p.id) === String(miPuesto.id) || Number(p.numero) === Number(miPuesto.numero)
+  );
+
+  if (myIndex === -1) return null;
+
+  const izquierdo = myIndex > 0
+    ? spotsSameType[myIndex - 1]
+    : { isLimit: true, label: 'Límite de fila / Pared' };
+
+  const derecho = myIndex < spotsSameType.length - 1
+    ? spotsSameType[myIndex + 1]
+    : { isLimit: true, label: 'Límite de fila / Pared' };
+
+  return { izquierdo, derecho };
+}
+
+function VecinosBahia({ miPuesto, vecinos, tipoLabel, user, accentColor, icon }) {
+  if (!miPuesto || !vecinos) return null;
+
+  return (
+    <div
+      style={{
+        marginTop: 16,
+        padding: 16,
+        background: 'var(--bg-secondary)',
+        borderRadius: 12,
+        border: '1px solid var(--border)'
+      }}
+    >
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          flexWrap: 'wrap',
+          gap: 8,
+          marginBottom: 14
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          {icon}
+          <strong style={{ fontSize: 14, color: 'var(--text-primary)' }}>
+            Vecinos de tu {tipoLabel} (Puesto #{miPuesto.numero})
+          </strong>
+        </div>
+
+        <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
+          Distribución de puestos contiguos
+        </span>
+      </div>
+
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+          gap: 12,
+          alignItems: 'stretch'
+        }}
+      >
+        {/* Lado Izquierdo */}
+        <div
+          style={{
+            padding: 14,
+            borderRadius: 10,
+            background: 'var(--bg-card)',
+            border: '1px solid var(--border)',
+            display: 'flex',
+            flexDirection: 'column',
+            justifyContent: 'space-between'
+          }}
+        >
+          <div>
+            <span
+              style={{
+                fontSize: 11,
+                color: 'var(--text-secondary)',
+                textTransform: 'uppercase',
+                letterSpacing: 0.5,
+                fontWeight: 700,
+                display: 'block',
+                marginBottom: 6
+              }}
+            >
+              ⬅️ Lado Izquierdo
+            </span>
+
+            {vecinos.izquierdo?.isLimit ? (
+              <div style={{ padding: '8px 0' }}>
+                <p style={{ fontWeight: 700, fontSize: 14, color: 'var(--text-muted)' }}>
+                  🧱 Límite / Pared
+                </p>
+                <p style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 2 }}>
+                  Inicio de fila (sin puesto al lado)
+                </p>
+              </div>
+            ) : vecinos.izquierdo ? (
+              <div>
+                <div
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    marginBottom: 6
+                  }}
+                >
+                  <strong style={{ fontSize: 16 }}>
+                    Puesto #{vecinos.izquierdo.numero}
+                  </strong>
+
+                  <span
+                    className={`badge ${
+                      vecinos.izquierdo.estado === 'ocupado'
+                        ? 'badge-review'
+                        : 'badge-approved'
+                    }`}
+                    style={{ fontSize: 10 }}
+                  >
+                    {vecinos.izquierdo.estado === 'ocupado' ? 'Ocupado' : 'Libre'}
+                  </span>
+                </div>
+
+                {vecinos.izquierdo.estado === 'ocupado' ? (
+                  <div>
+                    <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>
+                      👤 {vecinos.izquierdo.usuario_nombre || 'Usuario asignado'}
+                    </p>
+
+                    {vecinos.izquierdo.usuario_placa ? (
+                      <p
+                        style={{
+                          fontSize: 12,
+                          color: accentColor,
+                          fontWeight: 700,
+                          marginTop: 4,
+                          fontFamily: 'monospace'
+                        }}
+                      >
+                        Placa: {vecinos.izquierdo.usuario_placa}
+                      </p>
+                    ) : (
+                      <p style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 2 }}>
+                        Vehículo ocupando espacio
+                      </p>
+                    )}
+                  </div>
+                ) : (
+                  <p style={{ fontSize: 12, color: 'var(--accent-green)', fontWeight: 600 }}>
+                    🟢 Espacio disponible
+                  </p>
+                )}
+              </div>
+            ) : null}
+          </div>
+        </div>
+
+        {/* Tu Puesto (Centro) */}
+        <div
+          style={{
+            padding: 14,
+            borderRadius: 10,
+            background:
+              tipoLabel === 'carro'
+                ? 'rgba(22, 199, 83, 0.1)'
+                : 'rgba(168, 85, 247, 0.1)',
+            border: `2px solid ${accentColor}`,
+            boxShadow: `0 0 16px ${
+              tipoLabel === 'carro'
+                ? 'rgba(22, 199, 83, 0.18)'
+                : 'rgba(168, 85, 247, 0.18)'
+            }`,
+            display: 'flex',
+            flexDirection: 'column',
+            justifyContent: 'space-between'
+          }}
+        >
+          <div>
+            <span
+              style={{
+                fontSize: 11,
+                color: accentColor,
+                textTransform: 'uppercase',
+                letterSpacing: 0.5,
+                fontWeight: 800,
+                display: 'block',
+                marginBottom: 6
+              }}
+            >
+              ⭐ Tu Puesto (Centro)
+            </span>
+
+            <div>
+              <div
+                style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  marginBottom: 6
+                }}
+              >
+                <strong style={{ fontSize: 17, color: accentColor }}>
+                  Puesto #{miPuesto.numero}
+                </strong>
+
+                <span className="badge badge-approved" style={{ fontSize: 10 }}>
+                  Asignado a ti
+                </span>
+              </div>
+
+              <p style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)' }}>
+                {user?.nombre}
+              </p>
+
+              <p
+                style={{
+                  fontSize: 12,
+                  color: 'var(--text-secondary)',
+                  marginTop: 4,
+                  fontFamily: 'monospace',
+                  fontWeight: 600
+                }}
+              >
+                Placa:{' '}
+                {tipoLabel === 'carro'
+                  ? user?.placa_carro || user?.placa || '—'
+                  : user?.placa_moto || '—'}
+              </p>
+            </div>
+          </div>
+        </div>
+
+        {/* Lado Derecho */}
+        <div
+          style={{
+            padding: 14,
+            borderRadius: 10,
+            background: 'var(--bg-card)',
+            border: '1px solid var(--border)',
+            display: 'flex',
+            flexDirection: 'column',
+            justifyContent: 'space-between'
+          }}
+        >
+          <div>
+            <span
+              style={{
+                fontSize: 11,
+                color: 'var(--text-secondary)',
+                textTransform: 'uppercase',
+                letterSpacing: 0.5,
+                fontWeight: 700,
+                display: 'block',
+                marginBottom: 6
+              }}
+            >
+              ➡️ Lado Derecho
+            </span>
+
+            {vecinos.derecho?.isLimit ? (
+              <div style={{ padding: '8px 0' }}>
+                <p style={{ fontWeight: 700, fontSize: 14, color: 'var(--text-muted)' }}>
+                  🧱 Límite / Pared
+                </p>
+                <p style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 2 }}>
+                  Fin de fila (sin puesto al lado)
+                </p>
+              </div>
+            ) : vecinos.derecho ? (
+              <div>
+                <div
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    marginBottom: 6
+                  }}
+                >
+                  <strong style={{ fontSize: 16 }}>
+                    Puesto #{vecinos.derecho.numero}
+                  </strong>
+
+                  <span
+                    className={`badge ${
+                      vecinos.derecho.estado === 'ocupado'
+                        ? 'badge-review'
+                        : 'badge-approved'
+                    }`}
+                    style={{ fontSize: 10 }}
+                  >
+                    {vecinos.derecho.estado === 'ocupado' ? 'Ocupado' : 'Libre'}
+                  </span>
+                </div>
+
+                {vecinos.derecho.estado === 'ocupado' ? (
+                  <div>
+                    <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>
+                      👤 {vecinos.derecho.usuario_nombre || 'Usuario asignado'}
+                    </p>
+
+                    {vecinos.derecho.usuario_placa ? (
+                      <p
+                        style={{
+                          fontSize: 12,
+                          color: accentColor,
+                          fontWeight: 700,
+                          marginTop: 4,
+                          fontFamily: 'monospace'
+                        }}
+                      >
+                        Placa: {vecinos.derecho.usuario_placa}
+                      </p>
+                    ) : (
+                      <p style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 2 }}>
+                        Vehículo ocupando espacio
+                      </p>
+                    )}
+                  </div>
+                ) : (
+                  <p style={{ fontSize: 12, color: 'var(--accent-green)', fontWeight: 600 }}>
+                    🟢 Espacio disponible
+                  </p>
+                )}
+              </div>
+            ) : null}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function UserDashboard() {
   const { user } = useAuth();
 
   const [recibos, setRecibos] = useState([]);
   const [solicitudes, setSolicitudes] = useState([]);
   const [puestosAsignados, setPuestosAsignados] = useState([]);
+  const [todosLosPuestos, setTodosLosPuestos] = useState([]);
   const [mapUrl, setMapUrl] = useState('');
   const [loading, setLoading] = useState(true);
   const [loadingMapa, setLoadingMapa] = useState(true);
@@ -58,10 +398,11 @@ export default function UserDashboard() {
         setMapError(false);
         setLoadingMapa(false);
 
-        const [r, s, p] = await Promise.all([
+        const [r, s, p, allP] = await Promise.all([
           apiGetRecibos(user.id),
           apiGetSolicitudes(user.id),
-          apiGetPuestosUsuario(user.id)
+          apiGetPuestosUsuario(user.id),
+          apiGetPuestos()
         ]);
 
         if (r.success) {
@@ -74,6 +415,10 @@ export default function UserDashboard() {
 
         if (p.success) {
           setPuestosAsignados(p.data || []);
+        }
+
+        if (allP && allP.success) {
+          setTodosLosPuestos(allP.data || []);
         }
 
       } catch (error) {
@@ -119,6 +464,8 @@ export default function UserDashboard() {
   );
 
   const tienePuesto = Boolean(puestoCarro || puestoMoto);
+  const vecinosCarro = puestoCarro ? getVecinosPuesto(puestoCarro, todosLosPuestos) : null;
+  const vecinosMoto = puestoMoto ? getVecinosPuesto(puestoMoto, todosLosPuestos) : null;
 
   const placas = [
     user?.placa_carro
@@ -356,8 +703,9 @@ export default function UserDashboard() {
           </div>
 
           {tienePuesto ? (
-            <div
-              style={{
+            <>
+              <div
+                style={{
                 display: 'grid',
                 gridTemplateColumns:
                   'repeat(auto-fit, minmax(190px, 1fr))',
@@ -451,6 +799,29 @@ export default function UserDashboard() {
                 </div>
               )}
             </div>
+
+            {puestoCarro && vecinosCarro && (
+              <VecinosBahia
+                miPuesto={puestoCarro}
+                vecinos={vecinosCarro}
+                tipoLabel="carro"
+                user={user}
+                accentColor="var(--accent-green)"
+                icon={<Car size={18} color="var(--accent-green)" />}
+              />
+            )}
+
+            {puestoMoto && vecinosMoto && (
+              <VecinosBahia
+                miPuesto={puestoMoto}
+                vecinos={vecinosMoto}
+                tipoLabel="moto"
+                user={user}
+                accentColor="var(--accent-purple)"
+                icon={<Bike size={18} color="var(--accent-purple)" />}
+              />
+            )}
+          </>
           ) : (
             <div
               style={{

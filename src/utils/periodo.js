@@ -10,9 +10,18 @@ export const MESES = [
 export function parseDate(value) {
   if (!value) return null;
   if (typeof value === 'string') {
-    const clean = value.slice(0, 10);
+    const trimmed = value.trim();
+    const clean = trimmed.slice(0, 10);
     if (/^\d{4}-\d{2}-\d{2}$/.test(clean)) {
       const [year, month, day] = clean.split('-').map(Number);
+      const date = new Date(year, month - 1, day);
+      return Number.isNaN(date.getTime()) ? null : date;
+    }
+    const dmyMatch = trimmed.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{4})/);
+    if (dmyMatch) {
+      const day = Number(dmyMatch[1]);
+      const month = Number(dmyMatch[2]);
+      const year = Number(dmyMatch[3]);
       const date = new Date(year, month - 1, day);
       return Number.isNaN(date.getTime()) ? null : date;
     }

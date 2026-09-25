@@ -961,9 +961,33 @@ function getPuestos() {
     config[item.clave] = item.valor;
   });
 
+  const usuariosMap = {};
+  sheetToObjects(getSheet('usuarios')).forEach(u => {
+    usuariosMap[String(u.id)] = u;
+  });
+
+  const enrichedPuestos = puestos.map(p => {
+    const u = p.usuario_id ? usuariosMap[String(p.usuario_id)] : null;
+    let placa = '';
+    if (u) {
+      const tipoLower = String(p.tipo || '').toLowerCase();
+      if (tipoLower === 'carro') {
+        placa = u.placa_carro || u.placa || '';
+      } else if (tipoLower === 'moto') {
+        placa = u.placa_moto || u.placa || '';
+      } else {
+        placa = u.placa || '';
+      }
+    }
+    return {
+      ...p,
+      usuario_placa: placa
+    };
+  });
+
   const res = {
     success: true,
-    data: puestos,
+    data: enrichedPuestos,
     config
   };
 

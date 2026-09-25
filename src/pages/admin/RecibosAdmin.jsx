@@ -1,11 +1,17 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Receipt, Check, X, ExternalLink, Filter, CheckCircle, AlertCircle } from 'lucide-react';
 import { apiGetRecibos, apiGetUsuarios, apiAprobarRecibo, apiRechazarRecibo } from '../../api.js';
-import { calcularInicioPeriodo, formatPeriodoLabel, getClosedPeriods, getPeriodoKey, getPeriodoKeyForDate } from '../../utils/periodo.js';
-import { getReceiptMediaUrl } from '../../utils/media.js';
+import {
+  formatPeriodoLabel,
+  getClosedPeriods,
+  getPeriodoKey,
+  getUserBillingInfo,
+  getAdminClosingPeriod
+} from '../../utils/periodo.js';
+import { getReceiptMediaUrl, getReceiptViewerUrl } from '../../utils/media.js';
 
 const TODAY = new Date();
-const CURRENT_PERIOD_START = calcularInicioPeriodo(TODAY);
+const ADMIN_CYCLE = getAdminClosingPeriod(TODAY);
 
 export default function RecibosAdmin() {
   const [recibos, setRecibos] = useState([]);
@@ -16,10 +22,11 @@ export default function RecibosAdmin() {
   const [processing, setProcessing] = useState(false);
   const [toast, setToast] = useState(null);
   const [usuarios, setUsuarios] = useState([]);
-  const [startDate, setStartDate] = useState(CURRENT_PERIOD_START);
-  const [endDate, setEndDate] = useState('');
+  const [startDate, setStartDate] = useState(ADMIN_CYCLE.startDate);
+  const [endDate, setEndDate] = useState(ADMIN_CYCLE.endDate);
   const [includeClosed, setIncludeClosed] = useState(false);
   const [brokenImages, setBrokenImages] = useState({});
+  const [imageRetries, setImageRetries] = useState({});
 
   useEffect(() => {
     loadRecibos();
@@ -40,26 +47,49 @@ export default function RecibosAdmin() {
     setLoading(false);
   }
 
+  function handleImageError(id) {
+    setImageRetries(prev => {
+      if (!prev[id]) {
+        return { ...prev, [id]: true };
+      }
+      setBrokenImages(curr => ({ ...curr, [id]: true }));
+      return prev;
+    });
+  }
+
   async function handleAprobar(recibo) {
     setProcessing(true);
-    const res = await apiAprobarRecibo(recibo.id, nota || 'Aprobado por el administrador');
-    if (res.success) {
-      showToast('success', 'Recibo aprobado correctamente');
-      setSelectedRecibo(null); setNota('');
+    const notaFinal = nota || 'Aprobado por el administrador';
+    
+    // Actualización optimista: refleja el cambio en la interfaz al instante
+    setRecibos(prev => prev.map(item => item.id === recibo.id ? { ...item, estado: 'aprobado', admin_nota: notaFinal } : item));
+    setSelectedRecibo(null);
+    setNota('');
+    showToast('success', 'Recibo aprobado correctamente');
+
+    const res = await apiAprobarRecibo(recibo.id, notaFinal);
+    if (!res.success) {
+      showToast('error', res.error || 'Error al guardar la aprobación en el servidor');
       loadRecibos();
-    } else showToast('error', res.error || 'Error');
+    }
     setProcessing(false);
   }
 
   async function handleRechazar(recibo) {
     if (!nota) { showToast('error', 'Indica el motivo del rechazo'); return; }
     setProcessing(true);
+    
+    // Actualización optimista
+    setRecibos(prev => prev.map(item => item.id === recibo.id ? { ...item, estado: 'rechazado', admin_nota: nota } : item));
+    setSelectedRecibo(null);
+    setNota('');
+    showToast('success', 'Recibo rechazado');
+
     const res = await apiRechazarRecibo(recibo.id, nota);
-    if (res.success) {
-      showToast('success', 'Recibo rechazado');
-      setSelectedRecibo(null); setNota('');
+    if (!res.success) {
+      showToast('error', res.error || 'Error al guardar el rechazo en el servidor');
       loadRecibos();
-    } else showToast('error', res.error || 'Error');
+    }
     setProcessing(false);
   }
 
@@ -69,25 +99,32 @@ export default function RecibosAdmin() {
   }
 
   const filtered = useMemo(() => recibos.filter(r => {
-    const selectedPeriod = startDate ? getPeriodoKeyForDate(startDate) : '';
-    const periodMatches = !selectedPeriod || getPeriodoKey(r) === selectedPeriod;
-    const uploadDate = r.fecha_subida ? new Date(r.fecha_subida) : null;
-    const to = endDate ? new Date(`${endDate}T23:59:59`) : null;
-    const uploadMatchesEnd = !to || (uploadDate && uploadDate <= to);
+    const uploadDate = r.fecha_subida ? r.fecha_subida.slice(0, 10) : (r.fecha_inicio ? r.fecha_inicio.slice(0, 10) : '');
+    const fromMatches = !startDate || (uploadDate ? uploadDate >= startDate : true);
+    const toMatches = !endDate || (uploadDate ? uploadDate <= endDate : true);
+    const statusMatches = filter === 'todos' || r.estado === filter;
     const closed = getClosedPeriods().includes(getPeriodoKey(r));
-    return periodMatches && uploadMatchesEnd && (filter === 'todos' || r.estado === filter) && (includeClosed || !closed);
+    return fromMatches && toMatches && statusMatches && (includeClosed || !closed);
   }), [recibos, filter, startDate, endDate, includeClosed]);
 
   const unpaidUsers = useMemo(() => {
-    const period = startDate ? getPeriodoKeyForDate(startDate) : getPeriodoKeyForDate(TODAY);
-    const paidUserIds = new Set(recibos
-      .filter(r => getPeriodoKey(r) === period)
-      .map(r => String(r.usuario_id || r.user_id || r.id_usuario || '')));
-    const paidEmails = new Set(recibos
-      .filter(r => getPeriodoKey(r) === period)
-      .map(r => String(r.usuario_correo || r.correo || '').toLowerCase()));
-    return usuarios.filter(user => user.rol !== 'admin' && !paidUserIds.has(String(user.id)) && !paidEmails.has(String(user.correo || '').toLowerCase()));
-  }, [usuarios, recibos, startDate]);
+    return usuarios
+      .filter(user => user.rol !== 'admin' && String(user.activo) !== 'false')
+      .map(user => {
+        const userReceipts = recibos.filter(r =>
+          String(r.usuario_id || r.user_id || r.id_usuario || '') === String(user.id) ||
+          (user.correo && String(r.usuario_correo || r.correo || '').toLowerCase() === String(user.correo).toLowerCase())
+        );
+        const billing = getUserBillingInfo(user.fecha_inicio, TODAY, userReceipts);
+        return { ...user, billing };
+      })
+      .filter(u => u.billing.status === 'vencido' || u.billing.status === 'pendiente')
+      .sort((a, b) => {
+        if (a.billing.status === 'vencido' && b.billing.status !== 'vencido') return -1;
+        if (a.billing.status !== 'vencido' && b.billing.status === 'vencido') return 1;
+        return a.billing.diffDays - b.billing.diffDays;
+      });
+  }, [usuarios, recibos]);
 
   return (
     <div className="page-enter">
@@ -106,7 +143,23 @@ export default function RecibosAdmin() {
         <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap', alignItems: 'flex-end' }}>
           <div className="form-group" style={{ marginBottom: 0 }}><label>Desde</label><input type="date" className="form-input" value={startDate} onChange={e => setStartDate(e.target.value)} /></div>
           <div className="form-group" style={{ marginBottom: 0 }}><label>Hasta</label><input type="date" className="form-input" value={endDate} onChange={e => setEndDate(e.target.value)} /></div>
-          <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, paddingBottom: 9 }}><input type="checkbox" checked={includeClosed} onChange={e => setIncludeClosed(e.target.checked)} /> Incluir meses cerrados</label>
+          <button
+            type="button"
+            className="btn btn-ghost btn-sm"
+            onClick={() => { setStartDate(ADMIN_CYCLE.startDate); setEndDate(ADMIN_CYCLE.endDate); }}
+            style={{ height: 38 }}
+          >
+            Ciclo admin (12 al 11)
+          </button>
+          <button
+            type="button"
+            className="btn btn-ghost btn-sm"
+            onClick={() => { setStartDate(''); setEndDate(''); }}
+            style={{ height: 38 }}
+          >
+            Ver todos
+          </button>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, paddingBottom: 9, marginLeft: 'auto' }}><input type="checkbox" checked={includeClosed} onChange={e => setIncludeClosed(e.target.checked)} /> Incluir meses cerrados</label>
         </div>
         <div style={{ display: 'flex', gap: 8, marginBottom: 20, flexWrap: 'wrap' }}>
           {[
@@ -121,14 +174,54 @@ export default function RecibosAdmin() {
           ))}
         </div>
 
-        <div className="card" style={{ marginBottom: 20, borderColor: unpaidUsers.length ? 'rgba(245,158,11,0.4)' : undefined }}>
-          <h3 className="card-title">Usuarios sin pago en {startDate.slice(0, 7)}</h3>
-          <p className="card-subtitle">No tienen un recibo registrado para el período seleccionado.</p>
+        <div className="card" style={{ marginBottom: 20, borderColor: unpaidUsers.some(u => u.billing.status === 'vencido') ? 'rgba(239, 68, 68, 0.4)' : unpaidUsers.length ? 'rgba(245,158,11,0.4)' : undefined }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6, flexWrap: 'wrap', gap: 8 }}>
+            <h3 className="card-title" style={{ margin: 0 }}>Estado de Pagos (Cortes Individuales)</h3>
+            <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
+              {unpaidUsers.filter(u => u.billing.status === 'vencido').length} vencidos · {unpaidUsers.filter(u => u.billing.status === 'pendiente').length} pendientes
+            </span>
+          </div>
+          <p className="card-subtitle" style={{ marginBottom: 12 }}>
+            Cada usuario tiene su fecha de corte según su fecha de inicio registrada.
+          </p>
           {unpaidUsers.length ? (
-            <ul style={{ margin: 0, paddingLeft: 20, display: 'grid', gap: 6, fontSize: 13 }}>
-              {unpaidUsers.map(user => <li key={user.id}>{user.nombre}<span style={{ color: 'var(--text-muted)', marginLeft: 8 }}>{user.correo}</span></li>)}
-            </ul>
-          ) : <p style={{ fontSize: 13, color: 'var(--accent-green)' }}>Todos los usuarios tienen recibo registrado.</p>}
+            <div style={{ display: 'grid', gap: 8, maxHeight: 250, overflowY: 'auto' }}>
+              {unpaidUsers.map(user => (
+                <div
+                  key={user.id}
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    padding: '8px 12px',
+                    borderRadius: 8,
+                    background: 'var(--bg-secondary)',
+                    border: user.billing.status === 'vencido' ? '1px solid rgba(239, 68, 68, 0.35)' : '1px solid var(--border)'
+                  }}
+                >
+                  <div>
+                    <span style={{ fontWeight: 600, fontSize: 13 }}>{user.nombre}</span>
+                    <span style={{ color: 'var(--text-muted)', marginLeft: 8, fontSize: 12 }}>
+                      {user.correo || user.celular || '—'}
+                    </span>
+                    <span style={{ color: 'var(--text-secondary)', marginLeft: 8, fontSize: 11 }}>
+                      · Corte día {user.billing.billingDay} de cada mes
+                    </span>
+                  </div>
+                  <div>
+                    <span
+                      className={`badge ${user.billing.status === 'vencido' ? 'badge-rejected' : 'badge-review'}`}
+                      style={{ fontSize: 11 }}
+                    >
+                      {user.billing.badge}
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p style={{ fontSize: 13, color: 'var(--accent-green)' }}>✓ Todos los usuarios se encuentran al día con sus pagos.</p>
+          )}
         </div>
 
         {loading ? (
@@ -146,7 +239,13 @@ export default function RecibosAdmin() {
                 {/* Imagen del recibo */}
                 {getReceiptMediaUrl(r) && !brokenImages[r.id] ? (
                   <div style={{ borderRadius: 10, overflow: 'hidden', marginBottom: 14, border: '1px solid var(--border)' }}>
-                    <img src={getReceiptMediaUrl(r)} alt="recibo" onError={() => setBrokenImages(current => ({ ...current, [r.id]: true }))} style={{ width: '100%', height: 160, objectFit: 'cover' }} />
+                    <img
+                      src={getReceiptMediaUrl(r, Boolean(imageRetries[r.id]))}
+                      alt="recibo"
+                      loading="lazy"
+                      onError={() => handleImageError(r.id)}
+                      style={{ width: '100%', height: 160, objectFit: 'cover' }}
+                    />
                   </div>
                 ) : (
                   <div style={{ height: 120, background: 'var(--bg-secondary)', borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 14 }}>
@@ -169,8 +268,8 @@ export default function RecibosAdmin() {
                   Subido: {new Date(r.fecha_subida).toLocaleDateString('es-CO')}
                 </p>
 
-                {getReceiptMediaUrl(r) && (
-                  <a href={getReceiptMediaUrl(r)} target="_blank" rel="noreferrer" className="btn btn-ghost btn-sm" style={{ marginTop: 10 }} onClick={e => e.stopPropagation()}>
+                {getReceiptViewerUrl(r) && (
+                  <a href={getReceiptViewerUrl(r)} target="_blank" rel="noreferrer" className="btn btn-ghost btn-sm" style={{ marginTop: 10 }} onClick={e => e.stopPropagation()}>
                     <ExternalLink size={14} /> Ver recibo
                   </a>
                 )}
@@ -207,12 +306,17 @@ export default function RecibosAdmin() {
 
               {getReceiptMediaUrl(selectedRecibo) && !brokenImages[selectedRecibo.id] && (
                 <div style={{ marginBottom: 16, position: 'relative' }}>
-                  <img src={getReceiptMediaUrl(selectedRecibo)} alt="recibo" onError={() => setBrokenImages(current => ({ ...current, [selectedRecibo.id]: true }))} style={{ width: '100%', maxHeight: 340, objectFit: 'contain', borderRadius: 10, border: '1px solid var(--border)', background: 'var(--bg-secondary)' }} />
+                  <img
+                    src={getReceiptMediaUrl(selectedRecibo, Boolean(imageRetries[selectedRecibo.id]))}
+                    alt="recibo"
+                    onError={() => handleImageError(selectedRecibo.id)}
+                    style={{ width: '100%', maxHeight: 340, objectFit: 'contain', borderRadius: 10, border: '1px solid var(--border)', background: 'var(--bg-secondary)' }}
+                  />
                 </div>
               )}
 
-              {getReceiptMediaUrl(selectedRecibo) && (
-                <a href={getReceiptMediaUrl(selectedRecibo)} target="_blank" rel="noreferrer" className="btn btn-ghost btn-sm" style={{ marginBottom: 16 }}>
+              {getReceiptViewerUrl(selectedRecibo) && (
+                <a href={getReceiptViewerUrl(selectedRecibo)} target="_blank" rel="noreferrer" className="btn btn-ghost btn-sm" style={{ marginBottom: 16 }}>
                   <ExternalLink size={14} /> Ver recibo original
                 </a>
               )}

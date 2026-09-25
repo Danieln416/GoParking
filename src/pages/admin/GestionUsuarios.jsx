@@ -14,10 +14,9 @@ import {
   apiActualizarUsuario,
   apiEliminarUsuario,
   apiGetPuestos,
-  apiGetPuestosUsuario,
   apiAsignarPuestosUsuario
 } from '../../api.js';
-import { calcularFechaFin } from '../../utils/periodo.js';
+import { parseDate } from '../../utils/periodo.js';
 
 const TIPOS_VEHICULO = [
   { value: '', label: 'Sin vehículo / Sin asignación' },
@@ -123,18 +122,16 @@ export default function GestionUsuarios() {
     setLoadingPuestos(true);
 
     try {
-      const [resPuestos, resPuestosUsuario] = await Promise.all([
-        apiGetPuestos(),
-        apiGetPuestosUsuario(usuario.id)
-      ]);
+      const resPuestos = await apiGetPuestos();
 
       const todosLosPuestos = resPuestos.success
         ? resPuestos.data || []
         : [];
 
-      const puestosUsuario = resPuestosUsuario.success
-        ? resPuestosUsuario.data || []
-        : [];
+      // Filtra los puestos del usuario directamente en memoria sin una llamada extra
+      const puestosUsuario = todosLosPuestos.filter(
+        p => String(p.usuario_id) === String(usuario.id)
+      );
 
       const puestoCarro = puestosUsuario.find(
         puesto => String(puesto.tipo).toLowerCase() === 'carro'
@@ -319,7 +316,6 @@ async function handleSave(event) {
   }
 
   const fechaInicio = form.fecha_inicio || TODAY;
-  const fechaFin = calcularFechaFin(fechaInicio);
 
   const payload = {
     nombre,
@@ -334,8 +330,7 @@ async function handleSave(event) {
     tipo_tarifa: String(form.tipo_tarifa || ''),
     valor_tarifa: form.valor_tarifa || 0,
     contrasena: String(form.contrasena || ''),
-    fecha_inicio: fechaInicio,
-    fecha_fin: fechaFin
+    fecha_inicio: fechaInicio
   };
 
   setSaving(true);
@@ -513,6 +508,7 @@ async function handleSave(event) {
                   <th>Placas</th>
                   <th>Vehículo</th>
                   <th>Tarifa</th>
+                  <th>Corte</th>
                   <th>Valor</th>
                   <th>Celular</th>
                   <th>Acciones</th>
@@ -523,7 +519,7 @@ async function handleSave(event) {
                 {filtered.length === 0 ? (
                   <tr>
                     <td
-                      colSpan={8}
+                      colSpan={9}
                       style={{
                         textAlign: 'center',
                         padding: 40,
@@ -586,6 +582,25 @@ async function handleSave(event) {
                       <td>
                         <span style={{ fontSize: 12 }}>
                           {usuario.tipo_tarifa || '—'}
+                        </span>
+                      </td>
+
+                      <td>
+                        <span
+                          style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            fontSize: 11,
+                            fontWeight: 600,
+                            padding: '3px 8px',
+                            borderRadius: 6,
+                            background: 'rgba(22, 199, 83, 0.12)',
+                            color: 'var(--accent-green)',
+                            border: '1px solid rgba(22, 199, 83, 0.25)',
+                            whiteSpace: 'nowrap'
+                          }}
+                        >
+                          Día {parseDate(usuario.fecha_inicio)?.getDate() || '—'}
                         </span>
                       </td>
 
@@ -990,7 +1005,7 @@ async function handleSave(event) {
                 </div>
 
                 <div className="form-group">
-                  <label>Fecha de inicio del periodo</label>
+                  <label>Fecha de inicio (determina el día de corte mensual)</label>
 
                   <input
                     type="date"
@@ -1010,8 +1025,7 @@ async function handleSave(event) {
                       fontSize: 11
                     }}
                   >
-                    El fin del periodo se calcula automáticamente desde esta
-                    fecha.
+                    El día de inicio ({form.fecha_inicio ? parseDate(form.fecha_inicio)?.getDate() || '—' : '—'}) define el corte mensual recurrente del usuario. No se guarda fecha fin; todo se calcula dinámicamente.
                   </small>
                 </div>
 

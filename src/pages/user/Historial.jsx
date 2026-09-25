@@ -3,7 +3,7 @@ import { Receipt, ExternalLink, Clock, CheckCircle, XCircle } from 'lucide-react
 import { useAuth } from '../../context/AuthContext.jsx';
 import { apiGetRecibos } from '../../api.js';
 import { formatPeriodoLabel } from '../../utils/periodo.js';
-import { getReceiptMediaUrl } from '../../utils/media.js';
+import { getReceiptMediaUrl, getReceiptViewerUrl } from '../../utils/media.js';
 
 function StatusBadge({ estado }) {
   if (estado === 'aprobado') return <span className="badge badge-approved"><CheckCircle size={11} /> Aprobado</span>;
@@ -18,6 +18,7 @@ export default function Historial() {
   const [filter, setFilter] = useState('todos');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
+  const [brokenImages, setBrokenImages] = useState({});
 
   useEffect(() => {
     apiGetRecibos(user.id).then(res => {
@@ -78,11 +79,13 @@ export default function Historial() {
             {filtered.map(recibo => (
               <div key={recibo.id} className="card" style={{ display: 'flex', alignItems: 'flex-start', gap: 20 }}>
                 {/* Preview imagen */}
-                {getReceiptMediaUrl(recibo) ? (
-                  <a href={getReceiptMediaUrl(recibo)} target="_blank" rel="noreferrer" style={{ flexShrink: 0 }}>
+                {getReceiptMediaUrl(recibo) && !brokenImages[recibo.id] ? (
+                  <a href={getReceiptViewerUrl(recibo)} target="_blank" rel="noreferrer" style={{ flexShrink: 0 }}>
                     <img
                       src={getReceiptMediaUrl(recibo)}
                       alt="recibo"
+                      loading="lazy"
+                      onError={() => setBrokenImages(prev => ({ ...prev, [recibo.id]: true }))}
                       style={{ width: 80, height: 80, objectFit: 'cover', borderRadius: 10, border: '1px solid var(--border)' }}
                     />
                   </a>
@@ -119,8 +122,8 @@ export default function Historial() {
                   )}
                 </div>
 
-                {getReceiptMediaUrl(recibo) && (
-                  <a href={getReceiptMediaUrl(recibo)} target="_blank" rel="noreferrer" className="btn btn-ghost btn-sm" title="Ver recibo">
+                {getReceiptViewerUrl(recibo) && (
+                  <a href={getReceiptViewerUrl(recibo)} target="_blank" rel="noreferrer" className="btn btn-ghost btn-sm" title="Ver recibo">
                     <ExternalLink size={16} /> Ver recibo
                   </a>
                 )}

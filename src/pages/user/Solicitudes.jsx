@@ -62,7 +62,7 @@ export default function Solicitudes() {
       <div className="page-body">
         {/* Formulario */}
         {showForm && (
-          <div className="card" style={{ marginBottom: 24, borderColor: 'rgba(0,212,255,0.2)' }}>
+          <div className="card" style={{ marginBottom: 24, borderColor: 'rgba(22,199,83,0.25)' }}>
             <h3 className="card-title">Nueva Solicitud / Sugerencia / Reclamo</h3>
             <form onSubmit={handleSubmit}>
               <div className="form-group">

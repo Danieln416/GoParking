@@ -124,6 +124,10 @@ function doPost(e) {
         };
     }
 
+    if (result && result.success && data.action !== 'login') {
+      invalidateAppsScriptCache();
+    }
+
     return buildResponse(result);
   } catch (error) {
     return buildResponse({
@@ -455,10 +459,24 @@ function hashPassword(password) {
     .join('');
 }
 
+let _ssInstance = null;
+
+function getSS() {
+  if (!_ssInstance) {
+    _ssInstance = SpreadsheetApp.openById(CONFIG.SPREADSHEET_ID);
+  }
+  return _ssInstance;
+}
+
 function getSheet(name) {
-  return SpreadsheetApp
-    .openById(CONFIG.SPREADSHEET_ID)
-    .getSheetByName(name);
+  return getSS().getSheetByName(name);
+}
+
+function invalidateAppsScriptCache(keys = ['admin_resumen', 'puestos_data']) {
+  try {
+    const cache = CacheService.getScriptCache();
+    cache.removeAll(keys);
+  } catch (e) {}
 }
 
 function sheetToObjects(sheet) {
@@ -659,8 +677,6 @@ function login(data) {
 // ============================================================
 
 function getUsuarios() {
-  asegurarColumnasUsuarios();
-
   const usuarios = sheetToObjects(getSheet('usuarios'))
     .filter(usuario => isActivo(usuario.activo))
     .map(userPublicData);
@@ -930,6 +946,14 @@ function eliminarUsuario(data) {
 // ============================================================
 
 function getPuestos() {
+  const cache = CacheService.getScriptCache();
+  const cached = cache.get('puestos_data');
+  if (cached) {
+    try {
+      return JSON.parse(cached);
+    } catch (e) {}
+  }
+
   const puestos = sheetToObjects(getSheet('puestos'));
   const config = {};
 
@@ -937,11 +961,17 @@ function getPuestos() {
     config[item.clave] = item.valor;
   });
 
-  return {
+  const res = {
     success: true,
     data: puestos,
     config
   };
+
+  try {
+    cache.put('puestos_data', JSON.stringify(res), 180);
+  } catch (e) {}
+
+  return res;
 }
 
 function getPuestosUsuario(data) {
@@ -1200,15 +1230,19 @@ function subirRecibo(data) {
   );
 
   const fileId = file.getId();
-  const url =
-    'https://drive.usercontent.google.com/download?id=' + fileId + '&export=view';
+  const url = 'https://lh3.googleusercontent.com/d/' + fileId;
 
   const id = generateId();
   const fechaInicio = data.fechaInicio || data.fecha_inicio || '';
-  const fechaFin = data.fechaFin || data.fecha_fin || '';
+  let fechaFin = data.fechaFin || data.fecha_fin || '';
   const inicio = fechaInicio
     ? new Date(fechaInicio + 'T00:00:00')
     : new Date();
+
+  if (!fechaFin && fechaInicio) {
+    const finDate = new Date(inicio.getFullYear(), inicio.getMonth() + 1, inicio.getDate() - 1);
+    fechaFin = Utilities.formatDate(finDate, Session.getScriptTimeZone(), 'yyyy-MM-dd');
+  }
 
   asegurarColumnasRecibos();
   const sheet = getSheet('recibos');
@@ -1460,14 +1494,33 @@ function normalizarFechaTexto(value) {
 }
 
 function reciboPertenecePeriodo(recibo, startDate, endDate) {
-  if (recibo.fecha_inicio) {
-    return normalizarFechaTexto(recibo.fecha_inicio) === startDate &&
-      normalizarFechaTexto(recibo.fecha_fin) === endDate;
+  const start = new Date(startDate + 'T00:00:00');
+  const end = new Date(endDate + 'T23:59:59');
+
+  // 1. Si tiene fecha_subida (momento del pago/recaudo real en la caja del parqueadero)
+  if (recibo.fecha_subida) {
+    const upload = new Date(recibo.fecha_subida);
+    if (!isNaN(upload.getTime()) && upload >= start && upload <= end) {
+      return true;
+    }
   }
 
-  const inicio = new Date(startDate + 'T00:00:00');
-  return Number(recibo.mes) === inicio.getMonth() + 1 &&
-    Number(recibo.anio) === inicio.getFullYear();
+  // 2. Si su fecha_inicio registrada cae dentro del rango del cierre contable
+  if (recibo.fecha_inicio) {
+    const inicioStr = normalizarFechaTexto(recibo.fecha_inicio);
+    if (inicioStr >= startDate && inicioStr <= endDate) {
+      return true;
+    }
+  }
+
+  // 3. Compatibilidad con mes/año heredado
+  if (recibo.mes && recibo.anio) {
+    const inicio = new Date(startDate + 'T00:00:00');
+    return Number(recibo.mes) === (inicio.getMonth() + 1) &&
+      Number(recibo.anio) === inicio.getFullYear();
+  }
+
+  return false;
 }
 
 function periodoEstaCerrado(startDate, endDate) {
@@ -1682,6 +1735,14 @@ function asegurarHojaCierres() {
 }
 
 function getAdminResumen() {
+  const cache = CacheService.getScriptCache();
+  const cached = cache.get('admin_resumen');
+  if (cached) {
+    try {
+      return JSON.parse(cached);
+    } catch (e) {}
+  }
+
   const usuarios = sheetToObjects(getSheet('usuarios'))
     .filter(usuario => isActivo(usuario.activo));
   const recibos = sheetToObjects(getSheet('recibos'));
@@ -1698,7 +1759,7 @@ function getAdminResumen() {
       estado: recibo.estado
     }));
 
-  return {
+  const res = {
     success: true,
     data: {
       usuarios: usuarios.length,
@@ -1711,4 +1772,10 @@ function getAdminResumen() {
       recientesRecibos
     }
   };
+
+  try {
+    cache.put('admin_resumen', JSON.stringify(res), 120);
+  } catch (e) {}
+
+  return res;
 }

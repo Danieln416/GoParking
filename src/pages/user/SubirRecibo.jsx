@@ -4,7 +4,6 @@ import { useAuth } from '../../context/AuthContext.jsx';
 import { apiSubirRecibo } from '../../api.js';
 import { calcularFinPeriodoUsuario, calcularInicioPeriodoUsuario, formatPeriodoLabel } from '../../utils/periodo.js';
 
-const MESES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
 const TODAY = new Date().toISOString().slice(0, 10);
 
 export default function SubirRecibo() {
@@ -18,13 +17,71 @@ export default function SubirRecibo() {
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState(null);
   const [dragOver, setDragOver] = useState(false);
+  const [compressing, setCompressing] = useState(false);
   const fileInputRef = useRef();
   const cameraInputRef = useRef();
+
+  function compressImage(inputFile, maxDimension = 1200, quality = 0.82) {
+    return new Promise((resolve) => {
+      if (!inputFile || !inputFile.type.startsWith('image/') || inputFile.type.includes('svg') || inputFile.type.includes('gif')) {
+        return resolve(inputFile);
+      }
+
+      const img = document.createElement('img');
+      const url = URL.createObjectURL(inputFile);
+
+      img.onload = () => {
+        URL.revokeObjectURL(url);
+        let width = img.naturalWidth || img.width;
+        let height = img.naturalHeight || img.height;
+
+        if (width > maxDimension || height > maxDimension) {
+          if (width > height) {
+            height = Math.round((height * maxDimension) / width);
+            width = maxDimension;
+          } else {
+            width = Math.round((width * maxDimension) / height);
+            height = maxDimension;
+          }
+        }
+
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, width, height);
+
+        canvas.toBlob(
+          (blob) => {
+            if (!blob) {
+              resolve(inputFile);
+              return;
+            }
+            const cleanName = inputFile.name.replace(/\.[^.]+$/, '.jpg');
+            const compressedFile = new File([blob], cleanName, {
+              type: 'image/jpeg',
+              lastModified: Date.now()
+            });
+            resolve(compressedFile);
+          },
+          'image/jpeg',
+          quality
+        );
+      };
+
+      img.onerror = () => {
+        URL.revokeObjectURL(url);
+        resolve(inputFile);
+      };
+
+      img.src = url;
+    });
+  }
 
   function handleFile(f) {
     if (!f) return;
     if (!f.type.startsWith('image/')) { alert('Solo se aceptan imágenes'); return; }
-    if (f.size > 5 * 1024 * 1024) { alert('La imagen no puede superar 5MB'); return; }
+    if (f.size > 15 * 1024 * 1024) { alert('La imagen no puede superar 15MB'); return; }
     setFile(f);
     setPreview(URL.createObjectURL(f));
     setResult(null);
@@ -40,16 +97,35 @@ export default function SubirRecibo() {
     e.preventDefault();
     if (!file) { alert('Selecciona una imagen del recibo'); return; }
     setLoading(true);
-    const res = await apiSubirRecibo(user.id, user.nombre, user.correo, fechaInicio, fechaFin, mes, anio, file);
-    setResult(res);
-    if (res.success) {
-      setFile(null);
-      setPreview(null);
-    }
-    setLoading(false);
-  }
+    setCompressing(true);
 
-  const years = Array.from({ length: 5 }, (_, i) => new Date().getFullYear() - i);
+    try {
+      // Comprime la imagen para reducir el envío de 4MB a ~180KB
+      const fileToUpload = await compressImage(file);
+      setCompressing(false);
+
+      const res = await apiSubirRecibo(
+        user.id,
+        user.nombre,
+        user.correo,
+        fechaInicio,
+        fechaFin,
+        mes,
+        anio,
+        fileToUpload
+      );
+      setResult(res);
+      if (res.success) {
+        setFile(null);
+        setPreview(null);
+      }
+    } catch (err) {
+      setResult({ success: false, error: 'Error al procesar la imagen: ' + err.message });
+    } finally {
+      setCompressing(false);
+      setLoading(false);
+    }
+  }
 
   return (
     <div className="page-enter">
@@ -184,7 +260,11 @@ export default function SubirRecibo() {
               disabled={loading || !file}
             >
               {loading ? (
-                <><span className="spinner" style={{ width: 18, height: 18, borderWidth: 2 }} /> Subiendo...</>
+                compressing ? (
+                  <><span className="spinner" style={{ width: 18, height: 18, borderWidth: 2 }} /> Optimizando imagen...</>
+                ) : (
+                  <><span className="spinner" style={{ width: 18, height: 18, borderWidth: 2 }} /> Subiendo al servidor...</>
+                )
               ) : (
                 <><Upload size={18} /> Enviar Recibo</>
               )}

@@ -17,9 +17,8 @@ import {
   apiGetPuestosUsuario
 } from '../../api.js';
 import { Link } from 'react-router-dom';
-import { formatPeriodoLabel } from '../../utils/periodo.js';
-import { calcularFinPeriodoUsuario, calcularInicioPeriodoUsuario, getPeriodoKey, getPeriodoKeyForUser } from '../../utils/periodo.js';
-import { getReceiptMediaUrl } from '../../utils/media.js';
+import { formatPeriodoLabel, formatDateLabel, getUserBillingInfo } from '../../utils/periodo.js';
+import { getReceiptMediaUrl, getReceiptViewerUrl } from '../../utils/media.js';
 
 const LOCAL_PARKING_MAP_URL = '/parqueadero.png';
 
@@ -109,10 +108,7 @@ export default function UserDashboard() {
       new Date(b.fecha_subida) - new Date(a.fecha_subida)
   )[0];
 
-  const periodoActual = getPeriodoKeyForUser(new Date(), user?.fecha_inicio);
-  const tieneReciboPeriodoActual = recibos.some(recibo => getPeriodoKey(recibo) === periodoActual);
-  const inicioPeriodoActual = calcularInicioPeriodoUsuario(new Date(), user?.fecha_inicio);
-  const finPeriodoActual = calcularFinPeriodoUsuario(new Date(), user?.fecha_inicio);
+  const billingInfo = getUserBillingInfo(user?.fecha_inicio, new Date(), recibos);
 
   const puestoCarro = puestosAsignados.find(
     puesto => normalizePuestoTipo(puesto.tipo) === 'carro'
@@ -149,16 +145,84 @@ export default function UserDashboard() {
       </div>
 
       <div className="page-body">
-        {!loading && !tieneReciboPeriodoActual && (
-          <div className="card" style={{ marginBottom: 24, borderColor: 'rgba(245,158,11,0.45)', background: 'rgba(245,158,11,0.08)' }}>
-            <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
-              <AlertCircle size={22} color="var(--accent-yellow)" />
+        {!loading && (
+          <div
+            className="card"
+            style={{
+              marginBottom: 24,
+              borderColor:
+                billingInfo.status === 'vencido'
+                  ? 'rgba(239,68,68,0.5)'
+                  : billingInfo.status === 'pendiente'
+                  ? 'rgba(245,158,11,0.45)'
+                  : billingInfo.status === 'en_revision'
+                  ? 'rgba(59,130,246,0.45)'
+                  : 'rgba(22,199,83,0.35)',
+              background:
+                billingInfo.status === 'vencido'
+                  ? 'rgba(239,68,68,0.08)'
+                  : billingInfo.status === 'pendiente'
+                  ? 'rgba(245,158,11,0.08)'
+                  : billingInfo.status === 'en_revision'
+                  ? 'rgba(59,130,246,0.08)'
+                  : 'rgba(22,199,83,0.06)'
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'flex-start', gap: 14 }}>
+              {billingInfo.status === 'vencido' && <AlertCircle size={26} color="var(--accent-red)" style={{ flexShrink: 0, marginTop: 2 }} />}
+              {billingInfo.status === 'pendiente' && <Clock size={26} color="var(--accent-yellow)" style={{ flexShrink: 0, marginTop: 2 }} />}
+              {billingInfo.status === 'en_revision' && <Clock size={26} color="var(--accent-blue)" style={{ flexShrink: 0, marginTop: 2 }} />}
+              {billingInfo.status === 'al_dia' && <CheckCircle size={26} color="var(--accent-green)" style={{ flexShrink: 0, marginTop: 2 }} />}
+
               <div style={{ flex: 1 }}>
-                <h3 style={{ fontSize: 15, marginBottom: 4 }}>Tienes un pago pendiente</h3>
-                <p style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 10 }}>
-                  No has subido el recibo del período del {new Date(`${inicioPeriodoActual}T00:00:00`).toLocaleDateString('es-CO')} al {new Date(`${finPeriodoActual}T00:00:00`).toLocaleDateString('es-CO')}.
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8, marginBottom: 4 }}>
+                  <h3 style={{ fontSize: 16, fontWeight: 700, margin: 0 }}>
+                    {billingInfo.status === 'vencido' && 'Pago de Mensualidad Vencido'}
+                    {billingInfo.status === 'pendiente' && 'Próxima Fecha de Corte'}
+                    {billingInfo.status === 'en_revision' && 'Comprobante en Revisión'}
+                    {billingInfo.status === 'al_dia' && 'Mensualidad al Día'}
+                  </h3>
+                  <span
+                    className="badge"
+                    style={{
+                      background:
+                        billingInfo.status === 'vencido'
+                          ? 'rgba(239,68,68,0.2)'
+                          : billingInfo.status === 'pendiente'
+                          ? 'rgba(245,158,11,0.2)'
+                          : billingInfo.status === 'en_revision'
+                          ? 'rgba(59,130,246,0.2)'
+                          : 'rgba(22,199,83,0.2)',
+                      color:
+                        billingInfo.status === 'vencido'
+                          ? 'var(--accent-red)'
+                          : billingInfo.status === 'pendiente'
+                          ? 'var(--accent-yellow)'
+                          : billingInfo.status === 'en_revision'
+                          ? 'var(--accent-blue)'
+                          : 'var(--accent-green)',
+                      fontWeight: 700
+                    }}
+                  >
+                    {billingInfo.badge}
+                  </span>
+                </div>
+
+                <p style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 8 }}>
+                  {billingInfo.message}
                 </p>
-                <Link to="/usuario/subir-recibo" className="btn btn-primary btn-sm"><Upload size={14} /> Subir recibo</Link>
+
+                <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', fontSize: 12, color: 'var(--text-muted)', marginBottom: (billingInfo.status === 'vencido' || billingInfo.status === 'pendiente') ? 12 : 0 }}>
+                  <span>📅 Período: <strong>{formatDateLabel(billingInfo.periodStart)}</strong> al <strong>{formatDateLabel(billingInfo.periodEnd)}</strong></span>
+                  <span>⏰ Día de corte: <strong>Día {billingInfo.billingDay} de cada mes</strong></span>
+                  <span>🗓️ Próximo vencimiento: <strong>{formatDateLabel(billingInfo.cutoffDate)}</strong></span>
+                </div>
+
+                {(billingInfo.status === 'vencido' || billingInfo.status === 'pendiente') && (
+                  <Link to="/usuario/subir-recibo" className="btn btn-primary btn-sm">
+                    <Upload size={14} /> Subir comprobante de pago
+                  </Link>
+                )}
               </div>
             </div>
           </div>
@@ -168,8 +232,8 @@ export default function UserDashboard() {
           style={{
             marginBottom: 24,
             background:
-              'linear-gradient(135deg,rgba(0,212,255,0.08),rgba(79,126,255,0.06))',
-            borderColor: 'rgba(0,212,255,0.2)'
+              'linear-gradient(135deg,rgba(22,199,83,0.08),rgba(14,165,233,0.05))',
+            borderColor: 'rgba(22,199,83,0.25)'
           }}
         >
           <div
@@ -184,12 +248,12 @@ export default function UserDashboard() {
               style={{
                 width: 56,
                 height: 56,
-                background: 'rgba(0,212,255,0.15)',
+                background: 'rgba(22,199,83,0.15)',
                 borderRadius: 14,
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                color: 'var(--accent-cyan)'
+                color: 'var(--accent-green)'
               }}
             >
               {vehicleIcon(user?.tipo_vehiculo)}
@@ -224,8 +288,7 @@ export default function UserDashboard() {
                 }}
               >
                 {user?.tipo_vehiculo || 'Sin vehículo'} ·{' '}
-                {user?.tipo_tarifa || 'Sin tarifa'} · $
-                {Number(user?.valor_tarifa || 0).toLocaleString('es-CO')}
+                {user?.tipo_tarifa || 'Sin tarifa'} · ⏰ Corte: Día {billingInfo.billingDay} de cada mes
               </p>
             </div>
 
@@ -305,8 +368,8 @@ export default function UserDashboard() {
               {puestoCarro && (
                 <div
                   style={{
-                    border: '1px solid rgba(0,212,255,0.35)',
-                    background: 'rgba(0,212,255,0.08)',
+                    border: '1px solid rgba(22,199,83,0.35)',
+                    background: 'rgba(22,199,83,0.08)',
                     borderRadius: 10,
                     padding: 14
                   }}
@@ -316,7 +379,7 @@ export default function UserDashboard() {
                       display: 'flex',
                       alignItems: 'center',
                       gap: 8,
-                      color: 'var(--accent-cyan)',
+                      color: 'var(--accent-green)',
                       marginBottom: 6
                     }}
                   >
@@ -544,13 +607,14 @@ export default function UserDashboard() {
 
             {getReceiptMediaUrl(ultimoRecibo) && !receiptImageError && (
               <a
-                href={getReceiptMediaUrl(ultimoRecibo)}
+                href={getReceiptViewerUrl(ultimoRecibo)}
                 target="_blank"
                 rel="noreferrer"
               >
                 <img
                   src={getReceiptMediaUrl(ultimoRecibo)}
                   alt="Recibo"
+                  loading="lazy"
                   onError={() => setReceiptImageError(true)}
                   style={{
                     width: '100%',
@@ -563,8 +627,8 @@ export default function UserDashboard() {
               </a>
             )}
 
-            {getReceiptMediaUrl(ultimoRecibo) && (
-              <a href={getReceiptMediaUrl(ultimoRecibo)} target="_blank" rel="noreferrer" className="btn btn-ghost btn-sm" style={{ marginTop: 10 }}>
+            {getReceiptViewerUrl(ultimoRecibo) && (
+              <a href={getReceiptViewerUrl(ultimoRecibo)} target="_blank" rel="noreferrer" className="btn btn-ghost btn-sm" style={{ marginTop: 10 }}>
                 <Receipt size={14} /> Ver recibo original
               </a>
             )}

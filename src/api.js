@@ -1,12 +1,15 @@
 // ============================================================
-// API — Conexión con Google Apps Script
+// API — Conexión optimizada con Google Apps Script
 // ============================================================
 
 const GAS_URL =
   'https://script.google.com/macros/s/AKfycbzmLzNwfJuD4p6sSkE82xhxCGV7-M_CMVKbrXosv6hua2qsYvRWGvMmSl0RO4oiDDY2-A/exec';
 
-const READ_CACHE_TTL = 10000;
-const API_TIMEOUT_MS = 15000;
+// Configuración de caché
+const READ_CACHE_TTL = 180000; // 3 minutos de frescura óptima
+const STALE_CACHE_TTL = 600000; // Hasta 10 minutos para servir datos inmediatos (SWR)
+const API_TIMEOUT_MS = 30000; // 30s de timeout para prevenir cortes en cold starts
+
 const readCache = new Map();
 const pendingReads = new Map();
 
@@ -22,88 +25,105 @@ const READ_ACTIONS = new Set([
   'getParkingMapUrl'
 ]);
 
+// Helper para almacenamiento en sessionStorage
+const STORAGE_PREFIX = 'goparking_cache_';
+
+function getSessionCache(key) {
+  if (typeof window === 'undefined' || !window.sessionStorage) return null;
+  try {
+    const raw = window.sessionStorage.getItem(STORAGE_PREFIX + key);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
+function setSessionCache(key, entry) {
+  if (typeof window === 'undefined' || !window.sessionStorage) return;
+  try {
+    window.sessionStorage.setItem(STORAGE_PREFIX + key, JSON.stringify(entry));
+  } catch {
+    // Si la cuota de sessionStorage se llena, no bloquea la ejecución
+  }
+}
+
+function removeSessionCache(key) {
+  if (typeof window === 'undefined' || !window.sessionStorage) return;
+  try {
+    window.sessionStorage.removeItem(STORAGE_PREFIX + key);
+  } catch {}
+}
+
+function clearSessionCache(prefixes = []) {
+  if (typeof window === 'undefined' || !window.sessionStorage) return;
+  try {
+    const keys = Object.keys(window.sessionStorage);
+    for (const k of keys) {
+      if (k.startsWith(STORAGE_PREFIX)) {
+        if (!prefixes.length || prefixes.some(p => k.includes(p))) {
+          window.sessionStorage.removeItem(k);
+        }
+      }
+    }
+  } catch {}
+}
+
+// Limpieza periódica en memoria
 function clearExpiredReadCache() {
   const now = Date.now();
-
   for (const [key, entry] of readCache.entries()) {
-    if (now - entry.timestamp >= READ_CACHE_TTL) {
+    if (now - entry.timestamp >= STALE_CACHE_TTL) {
       readCache.delete(key);
+      removeSessionCache(key);
     }
   }
 }
 
 if (typeof window !== 'undefined') {
-  window.setInterval(clearExpiredReadCache, READ_CACHE_TTL);
+  window.setInterval(clearExpiredReadCache, 60000);
 }
 
 // ============================================================
-// UTILIDAD BASE
+// UTILIDAD BASE CON SWR (Stale-While-Revalidate)
 // ============================================================
 
-async function callAPI(action, payload = {}) {
-  clearExpiredReadCache();
-
+async function callAPI(action, payload = {}, options = {}) {
+  const { forceRefresh = false } = options;
   const cacheKey = JSON.stringify([action, payload]);
   const isRead = READ_ACTIONS.has(action);
-  const cached = readCache.get(cacheKey);
 
-  if (isRead && cached && Date.now() - cached.timestamp < READ_CACHE_TTL) {
-    return cached.value;
-  }
-
-  if (isRead && pendingReads.has(cacheKey)) {
-    return pendingReads.get(cacheKey);
-  }
-
-  const request = (async () => {
-    const controller = new AbortController();
-    const timeoutId = window.setTimeout(() => controller.abort(), API_TIMEOUT_MS);
-    const useGet = isRead || action === 'login';
-    const query = new URLSearchParams({
-      action,
-      ...payload
-    });
-    const requestUrl = useGet ? `${GAS_URL}?${query}` : GAS_URL;
-    const requestOptions = {
-      method: useGet ? 'GET' : 'POST',
-      cache: 'no-store',
-      signal: controller.signal
-    };
-
-    if (!useGet) {
-      requestOptions.body = JSON.stringify({ action, ...payload });
-    }
-
-    try {
-      const response = await fetch(requestUrl, requestOptions);
-
-      const text = await response.text();
-
-      try {
-        const value = JSON.parse(text);
-        if (isRead && value.success) {
-          readCache.set(cacheKey, { timestamp: Date.now(), value });
-        }
-        return value;
-      } catch {
-        return {
-          success: false,
-          error: 'Respuesta inválida del servidor: ' + text
-        };
+  if (isRead && !forceRefresh) {
+    let cached = readCache.get(cacheKey);
+    if (!cached) {
+      cached = getSessionCache(cacheKey);
+      if (cached) {
+        readCache.set(cacheKey, cached);
       }
-    } catch (error) {
-      const message = error.name === 'AbortError'
-        ? 'El servidor tardó demasiado en responder'
-        : 'Error de red: ' + error.message;
-
-      return {
-        success: false,
-        error: message
-      };
-    } finally {
-      window.clearTimeout(timeoutId);
     }
-  })();
+
+    const now = Date.now();
+    if (cached) {
+      const age = now - cached.timestamp;
+      // 1. Si está fresco (< 3 mins), retornar de inmediato en 0 ms
+      if (age < READ_CACHE_TTL) {
+        return cached.value;
+      }
+
+      // 2. Si es stale pero aún válido (< 10 mins), retornar inmediatamente y revalidar en segundo plano
+      if (age < STALE_CACHE_TTL) {
+        // Lanzar revalidación en segundo plano sin esperar
+        fetchFresh(action, payload, cacheKey).catch(() => {});
+        return cached.value;
+      }
+    }
+
+    // 3. Deduplicar peticiones idénticas en vuelo
+    if (pendingReads.has(cacheKey)) {
+      return pendingReads.get(cacheKey);
+    }
+  }
+
+  const request = fetchFresh(action, payload, cacheKey);
 
   if (isRead) {
     pendingReads.set(cacheKey, request);
@@ -113,9 +133,78 @@ async function callAPI(action, payload = {}) {
   return request;
 }
 
-function invalidateReads() {
-  readCache.clear();
+async function fetchFresh(action, payload, cacheKey) {
+  const isRead = READ_ACTIONS.has(action);
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), API_TIMEOUT_MS);
+  const useGet = isRead || action === 'login';
+  const query = new URLSearchParams({
+    action,
+    ...payload
+  });
+  const requestUrl = useGet ? `${GAS_URL}?${query}` : GAS_URL;
+  const requestOptions = {
+    method: useGet ? 'GET' : 'POST',
+    cache: 'no-store',
+    signal: controller.signal
+  };
+
+  if (!useGet) {
+    requestOptions.body = JSON.stringify({ action, ...payload });
+  }
+
+  try {
+    const response = await fetch(requestUrl, requestOptions);
+    const text = await response.text();
+
+    try {
+      const value = JSON.parse(text);
+      if (isRead && value.success) {
+        const entry = { timestamp: Date.now(), value };
+        readCache.set(cacheKey, entry);
+        setSessionCache(cacheKey, entry);
+      }
+      return value;
+    } catch {
+      return {
+        success: false,
+        error: 'Respuesta inválida del servidor: ' + text
+      };
+    }
+  } catch (error) {
+    const message = error.name === 'AbortError'
+      ? 'El servidor tardó demasiado en responder'
+      : 'Error de red: ' + error.message;
+
+    return {
+      success: false,
+      error: message
+    };
+  } finally {
+    clearTimeout(timeoutId);
+  }
 }
+
+/**
+ * Invalida selectivamente la caché para ciertas acciones o completamente
+ */
+export function invalidateReads(prefixes = []) {
+  if (!prefixes || prefixes.length === 0) {
+    readCache.clear();
+    clearSessionCache();
+    return;
+  }
+
+  for (const key of readCache.keys()) {
+    if (prefixes.some(p => key.includes(p))) {
+      readCache.delete(key);
+      removeSessionCache(key);
+    }
+  }
+  clearSessionCache(prefixes);
+}
+
+export const apiClearCache = () => invalidateReads();
 
 // ============================================================
 // AUTENTICACION
@@ -131,20 +220,20 @@ export const apiLogin = (correo, contrasena) =>
 // USUARIOS
 // ============================================================
 
-export const apiGetUsuarios = () =>
-  callAPI('getUsuarios');
+export const apiGetUsuarios = (options = {}) =>
+  callAPI('getUsuarios', {}, options);
 
-export const apiGetAdminResumen = () =>
-  callAPI('getAdminResumen').then(result => {
+export const apiGetAdminResumen = (options = {}) =>
+  callAPI('getAdminResumen', {}, options).then(result => {
     if (result.success || !String(result.error || '').includes('Acción no reconocida')) {
       return result;
     }
 
     return Promise.all([
-      callAPI('getUsuarios'),
-      callAPI('getRecibos', { userId: 'all' }),
-      callAPI('getPuestos'),
-      callAPI('getSolicitudes', { userId: 'all' })
+      callAPI('getUsuarios', {}, options),
+      callAPI('getRecibos', { userId: 'all' }, options),
+      callAPI('getPuestos', {}, options),
+      callAPI('getSolicitudes', { userId: 'all' }, options)
     ]).then(([usuarios, recibos, puestos, solicitudes]) => {
       const listaRecibos = recibos.success ? recibos.data || [] : [];
       const listaPuestos = puestos.success ? puestos.data || [] : [];
@@ -169,32 +258,47 @@ export const apiGetAdminResumen = () =>
   });
 
 export const apiCrearUsuario = data =>
-  callAPI('crearUsuario', data).then(result => { invalidateReads(); return result; });
+  callAPI('crearUsuario', data).then(result => {
+    if (result.success) invalidateReads(['getUsuarios', 'getAdminResumen', 'getPuestos']);
+    return result;
+  });
 
 export const apiActualizarUsuario = data =>
-  callAPI('actualizarUsuario', data).then(result => { invalidateReads(); return result; });
+  callAPI('actualizarUsuario', data).then(result => {
+    if (result.success) invalidateReads(['getUsuarios', 'getAdminResumen', 'getPuestos']);
+    return result;
+  });
 
 export const apiEliminarUsuario = id =>
-  callAPI('eliminarUsuario', { id }).then(result => { invalidateReads(); return result; });
+  callAPI('eliminarUsuario', { id }).then(result => {
+    if (result.success) invalidateReads(['getUsuarios', 'getAdminResumen', 'getPuestos']);
+    return result;
+  });
 
 // ============================================================
 // RECIBOS
 // ============================================================
 
-export const apiGetRecibos = (userId = 'all') =>
-  callAPI('getRecibos', { userId });
+export const apiGetRecibos = (userId = 'all', options = {}) =>
+  callAPI('getRecibos', { userId }, options);
 
 export const apiAprobarRecibo = (id, nota = '') =>
   callAPI('aprobarRecibo', {
     id,
     nota
-  }).then(result => { invalidateReads(); return result; });
+  }).then(result => {
+    if (result.success) invalidateReads(['getRecibos', 'getAdminResumen', 'getCierreMes']);
+    return result;
+  });
 
 export const apiRechazarRecibo = (id, nota = '') =>
   callAPI('rechazarRecibo', {
     id,
     nota
-  }).then(result => { invalidateReads(); return result; });
+  }).then(result => {
+    if (result.success) invalidateReads(['getRecibos', 'getAdminResumen', 'getCierreMes']);
+    return result;
+  });
 
 export const apiSubirRecibo = (
   userId,
@@ -227,7 +331,9 @@ export const apiSubirRecibo = (
         mimeType: file.type
       });
 
-      invalidateReads();
+      if (result.success) {
+        invalidateReads(['getRecibos', 'getAdminResumen']);
+      }
 
       resolve(result);
     };
@@ -247,13 +353,11 @@ export const apiSubirRecibo = (
 // PUESTOS
 // ============================================================
 
-export const apiGetPuestos = () =>
-  callAPI('getPuestos');
+export const apiGetPuestos = (options = {}) =>
+  callAPI('getPuestos', {}, options);
 
-export const apiGetPuestosUsuario = userId =>
-  callAPI('getPuestosUsuario', {
-    userId
-  });
+export const apiGetPuestosUsuario = (userId, options = {}) =>
+  callAPI('getPuestosUsuario', { userId }, options);
 
 export const apiAsignarPuestosUsuario = ({
   userId,
@@ -266,63 +370,82 @@ export const apiAsignarPuestosUsuario = ({
     userName,
     puestoCarroId,
     puestoMotoId
+  }).then(result => {
+    if (result.success) invalidateReads(['getPuestos', 'getAdminResumen', 'getUsuarios']);
+    return result;
   });
 
 export const apiUpdatePuesto = data =>
-  callAPI('updatePuesto', data).then(result => { invalidateReads(); return result; });
+  callAPI('updatePuesto', data).then(result => {
+    if (result.success) invalidateReads(['getPuestos', 'getAdminResumen']);
+    return result;
+  });
 
 export const apiUpdateConfigPuestos = data =>
-  callAPI('updateConfigPuestos', data).then(result => { invalidateReads(); return result; });
+  callAPI('updateConfigPuestos', data).then(result => {
+    if (result.success) invalidateReads(['getPuestos', 'getAdminResumen']);
+    return result;
+  });
 
 // ============================================================
 // SOLICITUDES
 // ============================================================
 
-export const apiGetSolicitudes = (userId = 'all') =>
-  callAPI('getSolicitudes', {
-    userId
-  });
+export const apiGetSolicitudes = (userId = 'all', options = {}) =>
+  callAPI('getSolicitudes', { userId }, options);
 
 export const apiCrearSolicitud = data =>
-  callAPI('crearSolicitud', data).then(result => { invalidateReads(); return result; });
+  callAPI('crearSolicitud', data).then(result => {
+    if (result.success) invalidateReads(['getSolicitudes', 'getAdminResumen']);
+    return result;
+  });
 
 export const apiResponderSolicitud = (id, respuesta) =>
   callAPI('responderSolicitud', {
     id,
     respuesta
-  }).then(result => { invalidateReads(); return result; });
+  }).then(result => {
+    if (result.success) invalidateReads(['getSolicitudes', 'getAdminResumen']);
+    return result;
+  });
 
 // ============================================================
 // CIERRE DE MES Y GASTOS
 // ============================================================
 
-export const apiGetCierreMes = (startDate, endDate) =>
+export const apiGetCierreMes = (startDate, endDate, options = {}) =>
   callAPI('getCierreMes', {
     startDate,
     endDate
-  });
+  }, options);
 
 export const apiAgregarGasto = data =>
-  callAPI('agregarGasto', data).then(result => { invalidateReads(); return result; });
-
-export const apiEliminarGasto = id =>
-  callAPI('eliminarGasto', { id }).then(result => { invalidateReads(); return result; });
-
-export const apiCerrarMes = (startDate, endDate) =>
-  callAPI('cerrarMes', { startDate, endDate }).then(result => {
-    invalidateReads();
+  callAPI('agregarGasto', data).then(result => {
+    if (result.success) invalidateReads(['getGastos', 'getCierreMes']);
     return result;
   });
 
-export const apiGetGastos = (startDate, endDate) =>
+export const apiEliminarGasto = id =>
+  callAPI('eliminarGasto', { id }).then(result => {
+    if (result.success) invalidateReads(['getGastos', 'getCierreMes']);
+    return result;
+  });
+
+export const apiCerrarMes = (startDate, endDate) =>
+  callAPI('cerrarMes', { startDate, endDate }).then(result => {
+    if (result.success) invalidateReads(['getCierreMes']);
+    return result;
+  });
+
+export const apiGetGastos = (startDate, endDate, options = {}) =>
   callAPI('getGastos', {
     startDate,
     endDate
-  });
+  }, options);
 
 // ============================================================
 // MAPA DEL PARQUEADERO
 // ============================================================
 
-export const apiGetParkingMapUrl = () =>
-  callAPI('getParkingMapUrl');
+export const apiGetParkingMapUrl = (options = {}) =>
+  callAPI('getParkingMapUrl', {}, options);

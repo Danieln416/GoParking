@@ -6,8 +6,7 @@ const GAS_URL =
   'https://script.google.com/macros/s/AKfycbzmLzNwfJuD4p6sSkE82xhxCGV7-M_CMVKbrXosv6hua2qsYvRWGvMmSl0RO4oiDDY2-A/exec';
 
 // Configuración de caché
-const READ_CACHE_TTL = 180000; // 3 minutos de frescura óptima
-const STALE_CACHE_TTL = 600000; // Hasta 10 minutos para servir datos inmediatos (SWR)
+const READ_CACHE_TTL = 2000; // Solo 2 segundos para deduplicar componentes que se montan al mismo tiempo
 const API_TIMEOUT_MS = 30000; // 30s de timeout para prevenir cortes en cold starts
 
 const readCache = new Map();
@@ -26,66 +25,20 @@ const READ_ACTIONS = new Set([
   'getCuentasPago'
 ]);
 
-// Helper para almacenamiento en sessionStorage
-const STORAGE_PREFIX = 'goparking_cache_';
-
-function getSessionCache(key) {
-  if (typeof window === 'undefined' || !window.sessionStorage) return null;
-  try {
-    const raw = window.sessionStorage.getItem(STORAGE_PREFIX + key);
-    return raw ? JSON.parse(raw) : null;
-  } catch {
-    return null;
-  }
-}
-
-function setSessionCache(key, entry) {
-  if (typeof window === 'undefined' || !window.sessionStorage) return;
-  try {
-    window.sessionStorage.setItem(STORAGE_PREFIX + key, JSON.stringify(entry));
-  } catch {
-    // Si la cuota de sessionStorage se llena, no bloquea la ejecución
-  }
-}
-
-function removeSessionCache(key) {
-  if (typeof window === 'undefined' || !window.sessionStorage) return;
-  try {
-    window.sessionStorage.removeItem(STORAGE_PREFIX + key);
-  } catch {}
-}
-
-function clearSessionCache(prefixes = []) {
-  if (typeof window === 'undefined' || !window.sessionStorage) return;
+// Limpieza retroactiva: eliminar cualquier residuo de sessionStorage de versiones anteriores
+if (typeof window !== 'undefined' && window.sessionStorage) {
   try {
     const keys = Object.keys(window.sessionStorage);
     for (const k of keys) {
-      if (k.startsWith(STORAGE_PREFIX)) {
-        if (!prefixes.length || prefixes.some(p => k.includes(p))) {
-          window.sessionStorage.removeItem(k);
-        }
+      if (k.startsWith('goparking_cache_')) {
+        window.sessionStorage.removeItem(k);
       }
     }
   } catch {}
 }
 
-// Limpieza periódica en memoria
-function clearExpiredReadCache() {
-  const now = Date.now();
-  for (const [key, entry] of readCache.entries()) {
-    if (now - entry.timestamp >= STALE_CACHE_TTL) {
-      readCache.delete(key);
-      removeSessionCache(key);
-    }
-  }
-}
-
-if (typeof window !== 'undefined') {
-  window.setInterval(clearExpiredReadCache, 60000);
-}
-
 // ============================================================
-// UTILIDAD BASE CON SWR (Stale-While-Revalidate)
+// UTILIDAD BASE (Llamadas en tiempo real sin almacenamiento en disco)
 // ============================================================
 
 async function callAPI(action, payload = {}, options = {}) {
@@ -94,37 +47,21 @@ async function callAPI(action, payload = {}, options = {}) {
   const isRead = READ_ACTIONS.has(action);
 
   if (isRead && !forceRefresh) {
-    let cached = readCache.get(cacheKey);
-    if (!cached) {
-      cached = getSessionCache(cacheKey);
-      if (cached) {
-        readCache.set(cacheKey, cached);
-      }
-    }
-
+    const cached = readCache.get(cacheKey);
     const now = Date.now();
-    if (cached) {
-      const age = now - cached.timestamp;
-      // 1. Si está fresco (< 3 mins), retornar de inmediato en 0 ms
-      if (age < READ_CACHE_TTL) {
-        return cached.value;
-      }
 
-      // 2. Si es stale pero aún válido (< 10 mins), retornar inmediatamente y revalidar en segundo plano
-      if (age < STALE_CACHE_TTL) {
-        // Lanzar revalidación en segundo plano sin esperar
-        fetchFresh(action, payload, cacheKey).catch(() => {});
-        return cached.value;
-      }
+    // Solo devolver de memoria si fue consultado en los últimos 2 segundos
+    if (cached && (now - cached.timestamp < READ_CACHE_TTL)) {
+      return cached.value;
     }
 
-    // 3. Deduplicar peticiones idénticas en vuelo
+    // Deduplicar peticiones idénticas en vuelo (evita disparar 2 peticiones al mismo tiempo)
     if (pendingReads.has(cacheKey)) {
       return pendingReads.get(cacheKey);
     }
   }
 
-  const request = fetchFresh(action, payload, cacheKey);
+  const request = fetchFresh(action, payload, cacheKey, forceRefresh);
 
   if (isRead) {
     pendingReads.set(cacheKey, request);
@@ -134,15 +71,23 @@ async function callAPI(action, payload = {}, options = {}) {
   return request;
 }
 
-async function fetchFresh(action, payload, cacheKey) {
+async function fetchFresh(action, payload, cacheKey, forceRefresh = false) {
   const isRead = READ_ACTIONS.has(action);
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), API_TIMEOUT_MS);
   const useGet = isRead || action === 'login';
-  const query = new URLSearchParams({
+
+  const queryParams = {
     action,
-    ...payload
-  });
+    ...payload,
+    _t: Date.now() // Previene que el navegador o proxies intermedios sirvan respuestas 302 o GET cacheadas
+  };
+
+  if (forceRefresh) {
+    queryParams.nocache = '1';
+  }
+
+  const query = new URLSearchParams(queryParams);
   const requestUrl = useGet ? `${GAS_URL}?${query}` : GAS_URL;
   const requestOptions = {
     method: useGet ? 'GET' : 'POST',
@@ -161,9 +106,7 @@ async function fetchFresh(action, payload, cacheKey) {
     try {
       const value = JSON.parse(text);
       if (isRead && value.success) {
-        const entry = { timestamp: Date.now(), value };
-        readCache.set(cacheKey, entry);
-        setSessionCache(cacheKey, entry);
+        readCache.set(cacheKey, { timestamp: Date.now(), value });
       }
       return value;
     } catch {
@@ -187,25 +130,26 @@ async function fetchFresh(action, payload, cacheKey) {
 }
 
 /**
- * Invalida selectivamente la caché para ciertas acciones o completamente
+ * Invalida completamente la memoria caché para forzar lecturas frescas
  */
-export function invalidateReads(prefixes = []) {
-  if (!prefixes || prefixes.length === 0) {
-    readCache.clear();
-    clearSessionCache();
-    return;
-  }
-
-  for (const key of readCache.keys()) {
-    if (prefixes.some(p => key.includes(p))) {
-      readCache.delete(key);
-      removeSessionCache(key);
-    }
-  }
-  clearSessionCache(prefixes);
+export function invalidateReads() {
+  readCache.clear();
+  pendingReads.clear();
 }
 
-export const apiClearCache = () => invalidateReads();
+export const apiClearCache = () => {
+  invalidateReads();
+  if (typeof window !== 'undefined' && window.sessionStorage) {
+    try {
+      const keys = Object.keys(window.sessionStorage);
+      for (const k of keys) {
+        if (k.startsWith('goparking_cache_')) {
+          window.sessionStorage.removeItem(k);
+        }
+      }
+    } catch {}
+  }
+};
 
 // ============================================================
 // AUTENTICACION

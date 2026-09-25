@@ -1,16 +1,26 @@
 import React, { useState } from 'react';
 import { Outlet, NavLink, useNavigate } from 'react-router-dom';
-import { Car, LayoutDashboard, Users, Receipt, MapPin, Calculator, MessageSquare, CreditCard, LogOut, Menu, X } from 'lucide-react';
+import { Car, LayoutDashboard, Users, Receipt, MapPin, Calculator, MessageSquare, CreditCard, RotateCw, LogOut, Menu, X } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext.jsx';
+import { apiClearCache } from '../../api.js';
 
 export default function AdminLayout() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [syncing, setSyncing] = useState(false);
 
   function handleLogout() {
     logout();
     navigate('/login');
+  }
+
+  function handleSync() {
+    setSyncing(true);
+    apiClearCache();
+    setTimeout(() => {
+      window.location.reload();
+    }, 200);
   }
 
   return (
@@ -72,6 +82,17 @@ export default function AdminLayout() {
               <p>Admin</p>
             </div>
           </div>
+          <button 
+            type="button" 
+            className="btn btn-ghost btn-full btn-sm" 
+            style={{ marginBottom: 6, borderColor: 'rgba(22,199,83,0.3)', color: 'var(--accent-green)' }}
+            onClick={handleSync}
+            disabled={syncing}
+            title="Refrescar y sincronizar datos directamente desde la base de datos"
+          >
+            <RotateCw size={13} style={{ animation: syncing ? 'spin 1s linear infinite' : 'none' }} />
+            {syncing ? 'Actualizando...' : 'Actualizar datos'}
+          </button>
           <button className="btn btn-ghost btn-full btn-sm" onClick={handleLogout}>
             <LogOut size={14} /> Cerrar sesión
           </button>
@@ -79,11 +100,23 @@ export default function AdminLayout() {
       </aside>
 
       <div className="main-content">
-        <div className="mobile-topbar">
-          <button className="mobile-menu-toggle" onClick={() => setMobileMenuOpen((prev) => !prev)} aria-label="Abrir menú">
-            {mobileMenuOpen ? <X size={20} /> : <Menu size={20} />}
+        <div className="mobile-topbar" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <button className="mobile-menu-toggle" onClick={() => setMobileMenuOpen((prev) => !prev)} aria-label="Abrir menú">
+              {mobileMenuOpen ? <X size={20} /> : <Menu size={20} />}
+            </button>
+            <div className="mobile-topbar-title">Panel Admin</div>
+          </div>
+          <button 
+            type="button" 
+            className="btn btn-ghost btn-sm" 
+            onClick={handleSync}
+            disabled={syncing}
+            style={{ padding: '6px 10px', height: 'auto', color: 'var(--accent-green)' }}
+            title="Actualizar datos"
+          >
+            <RotateCw size={15} style={{ animation: syncing ? 'spin 1s linear infinite' : 'none' }} />
           </button>
-          <div className="mobile-topbar-title">Panel Admin</div>
         </div>
         <Outlet />
       </div>

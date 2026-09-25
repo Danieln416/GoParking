@@ -213,6 +213,11 @@ function doGet(e) {
     return buildResponse(getCuentasPago());
   }
 
+  if (action === 'clearCache') {
+    invalidateAppsScriptCache();
+    return buildResponse({ success: true, message: 'Caché eliminada correctamente' });
+  }
+
   return ContentService.createTextOutput('Parking App API v1.0');
 }
 
@@ -975,14 +980,6 @@ function eliminarUsuario(data) {
 // ============================================================
 
 function getPuestos() {
-  const cache = CacheService.getScriptCache();
-  const cached = cache.get('puestos_data');
-  if (cached) {
-    try {
-      return JSON.parse(cached);
-    } catch (e) {}
-  }
-
   const puestos = sheetToObjects(getSheet('puestos'));
   const config = {};
 
@@ -1014,17 +1011,11 @@ function getPuestos() {
     };
   });
 
-  const res = {
+  return {
     success: true,
     data: enrichedPuestos,
     config
   };
-
-  try {
-    cache.put('puestos_data', JSON.stringify(res), 180);
-  } catch (e) {}
-
-  return res;
 }
 
 function getPuestosUsuario(data) {
@@ -1793,14 +1784,6 @@ function asegurarHojaCierres() {
 }
 
 function getAdminResumen() {
-  const cache = CacheService.getScriptCache();
-  const cached = cache.get('admin_resumen');
-  if (cached) {
-    try {
-      return JSON.parse(cached);
-    } catch (e) {}
-  }
-
   const usuarios = sheetToObjects(getSheet('usuarios'))
     .filter(usuario => isActivo(usuario.activo));
   const recibos = sheetToObjects(getSheet('recibos'));
@@ -1817,7 +1800,7 @@ function getAdminResumen() {
       estado: recibo.estado
     }));
 
-  const res = {
+  return {
     success: true,
     data: {
       usuarios: usuarios.length,
@@ -1830,12 +1813,6 @@ function getAdminResumen() {
       recientesRecibos
     }
   };
-
-  try {
-    cache.put('admin_resumen', JSON.stringify(res), 120);
-  } catch (e) {}
-
-  return res;
 }
 
 // ============================================================

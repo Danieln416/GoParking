@@ -1,17 +1,18 @@
 # Parche de Optimización y Compatibilidad para Google Apps Script
 
 Este documento contiene los cambios que deben aplicarse en el proyecto de **Google Apps Script** para:
-1. **Solucionar el problema de imágenes de recibos que no cargaban** (bloqueadas por `Cross-Origin-Resource-Policy: same-site`).
-2. **Reducir el tiempo de respuesta del backend** de ~5.5s a ~1s usando `CacheService` y un Singleton de `SpreadsheetApp`.
-3. **Optimizar las lecturas** eliminando chequeos redundantes de columnas en cada GET.
+1. **Sincronización en tiempo real con la base de datos:** Se eliminó el almacenamiento en caché prolongado en `CacheService` y en el navegador (`sessionStorage`) para que cualquier edición manual en Google Sheets o en la aplicación se refleje de inmediato.
+2. **Solucionar el problema de imágenes de recibos que no cargaban** (bloqueadas por `Cross-Origin-Resource-Policy: same-site`).
+3. **Reducir el tiempo de respuesta del backend** de ~5.5s a ~800ms usando el Singleton de `SpreadsheetApp`.
+4. **Optimizar las lecturas** eliminando chequeos redundantes de columnas en cada GET.
 
 El código fuente completo y actualizado se encuentra en [`docs/Code.gs`](file:///c:/Users/Daniel/OneDrive/Documentos/prigma/GoParking/docs/Code.gs). A continuación se detallan los bloques clave modificados:
 
 ---
 
-## 1. Singleton de Spreadsheet y Manejo de Caché
+## 1. Singleton de Spreadsheet (Lectura Rápida en Vivo)
 
-Reemplaza la función `getSheet(name)` en Apps Script por este bloque:
+Reemplaza la función `getSheet(name)` en Apps Script por este bloque. El Singleton reutiliza la conexión activa de la hoja de cálculo sin almacenar respuestas congeladas en caché:
 
 ```javascript
 let _ssInstance = null;

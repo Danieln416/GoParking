@@ -117,6 +117,18 @@ function doPost(e) {
         result = getParkingMapUrl();
         break;
 
+      case 'getCuentasPago':
+        result = getCuentasPago();
+        break;
+
+      case 'guardarCuentaPago':
+        result = guardarCuentaPago(data);
+        break;
+
+      case 'eliminarCuentaPago':
+        result = eliminarCuentaPago(data);
+        break;
+
       default:
         result = {
           success: false,
@@ -195,6 +207,10 @@ function doGet(e) {
 
   if (action === 'getGastos') {
     return buildResponse(getGastos(data));
+  }
+
+  if (action === 'getCuentasPago') {
+    return buildResponse(getCuentasPago());
   }
 
   return ContentService.createTextOutput('Parking App API v1.0');
@@ -292,6 +308,19 @@ function initSheets() {
       'fecha_fin',
       'fecha_cierre',
       'estado'
+    ],
+
+    cuentas_pago: [
+      'id',
+      'nombre',
+      'entidad',
+      'tipo_cuenta',
+      'numero',
+      'titular',
+      'qr_url',
+      'file_id',
+      'instrucciones',
+      'activo'
     ]
   };
 
@@ -1268,6 +1297,8 @@ function subirRecibo(data) {
     fechaFin = Utilities.formatDate(finDate, Session.getScriptTimeZone(), 'yyyy-MM-dd');
   }
 
+  const metodoPago = data.metodoPago || data.metodo_pago || 'No especificado';
+
   asegurarColumnasRecibos();
   const sheet = getSheet('recibos');
   const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
@@ -1281,6 +1312,7 @@ function subirRecibo(data) {
     fecha_fin: fechaFin,
     mes: inicio.getMonth() + 1,
     anio: inicio.getFullYear(),
+    metodo_pago: metodoPago,
     url_imagen: url,
     file_id: fileId,
     estado: 'en_revision',
@@ -1472,6 +1504,7 @@ function getCierreMes(data) {
       placa_moto: usuario ? usuario.placa_moto || '' : '',
       tipo_vehiculo: usuario ? usuario.tipo_vehiculo : '',
       tipo_tarifa: usuario ? usuario.tipo_tarifa : '',
+      metodo_pago: recibo.metodo_pago || 'No especificado',
       valor,
       fecha: recibo.fecha_subida
     };
@@ -1728,6 +1761,7 @@ function asegurarColumnasRecibos() {
     'fecha_fin',
     'mes',
     'anio',
+    'metodo_pago',
     'url_imagen',
     'file_id',
     'estado',
@@ -1802,4 +1836,137 @@ function getAdminResumen() {
   } catch (e) {}
 
   return res;
+}
+
+// ============================================================
+// CUENTAS Y OPCIONES DE PAGO
+// ============================================================
+
+function asegurarHojaCuentasPago() {
+  const ss = SpreadsheetApp.openById(CONFIG.SPREADSHEET_ID);
+  let sheet = ss.getSheetByName('cuentas_pago');
+
+  if (!sheet) {
+    sheet = ss.insertSheet('cuentas_pago');
+  }
+
+  if (sheet.getLastRow() === 0) {
+    sheet.appendRow([
+      'id',
+      'nombre',
+      'entidad',
+      'tipo_cuenta',
+      'numero',
+      'titular',
+      'qr_url',
+      'file_id',
+      'instrucciones',
+      'activo'
+    ]);
+  }
+
+  return sheet;
+}
+
+function getCuentasPago() {
+  asegurarHojaCuentasPago();
+  const cuentas = sheetToObjects(getSheet('cuentas_pago'));
+  return {
+    success: true,
+    data: cuentas.map(c => ({
+      id: c.id,
+      nombre: c.nombre || '',
+      entidad: c.entidad || '',
+      tipo_cuenta: c.tipo_cuenta || '',
+      numero: c.numero || '',
+      titular: c.titular || '',
+      qr_url: c.qr_url || '',
+      file_id: c.file_id || '',
+      instrucciones: c.instrucciones || '',
+      activo: isActivo(c.activo)
+    }))
+  };
+}
+
+function guardarCuentaPago(data) {
+  asegurarHojaCuentasPago();
+  const sheet = getSheet('cuentas_pago');
+  const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+  const id = data.id || generateId();
+  const rowNum = findRowById(sheet, id);
+
+  let qrUrl = data.qr_url || '';
+  let fileId = data.file_id || '';
+
+  // Si se envió imagen en base64 para el QR
+  if (data.base64Data) {
+    try {
+      const folder = DriveApp.getFolderById(CONFIG.DRIVE_FOLDER_ID);
+      const decoded = Utilities.base64Decode(data.base64Data);
+      const blob = Utilities.newBlob(
+        decoded,
+        data.mimeType || 'image/jpeg',
+        data.fileName || ('qr_' + id + '.jpg')
+      );
+      const file = folder.createFile(blob);
+      file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+      fileId = file.getId();
+      qrUrl = 'https://lh3.googleusercontent.com/d/' + fileId;
+    } catch (e) {
+      Logger.log('Error subiendo QR a Drive: ' + e.message);
+    }
+  }
+
+  const updates = {
+    nombre: data.nombre || '',
+    entidad: data.entidad || '',
+    tipo_cuenta: data.tipo_cuenta || '',
+    numero: data.numero || '',
+    titular: data.titular || '',
+    qr_url: qrUrl,
+    file_id: fileId,
+    instrucciones: data.instrucciones || '',
+    activo: data.activo !== false ? 'TRUE' : 'FALSE'
+  };
+
+  if (rowNum === -1) {
+    const rowValues = {
+      id,
+      ...updates
+    };
+    sheet.appendRow(headers.map(h => rowValues[h] !== undefined ? rowValues[h] : ''));
+  } else {
+    updateFieldsInRow(sheet, rowNum, headers, updates);
+  }
+
+  return {
+    success: true,
+    data: {
+      id,
+      ...updates,
+      activo: data.activo !== false
+    }
+  };
+}
+
+function eliminarCuentaPago(data) {
+  asegurarHojaCuentasPago();
+  const sheet = getSheet('cuentas_pago');
+  const headers = sheet.getDataRange().getValues()[0];
+  const rowNum = findRowById(sheet, data.id);
+
+  if (rowNum === -1) {
+    return {
+      success: false,
+      error: 'Cuenta no encontrada'
+    };
+  }
+
+  updateFieldsInRow(sheet, rowNum, headers, {
+    activo: 'FALSE'
+  });
+
+  return {
+    success: true
+  };
 }

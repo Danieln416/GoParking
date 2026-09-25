@@ -17,6 +17,7 @@ export default function CierreMes() {
   const [endDate, setEndDate] = useState(currentPeriodEnd);
   const [datos, setDatos] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [filtroMetodo, setFiltroMetodo] = useState('todos');
   const [showAddGasto, setShowAddGasto] = useState(false);
   const [gastoForm, setGastoForm] = useState({ descripcion: '', valor: '', fecha: todayStr });
   const [saving, setSaving] = useState(false);
@@ -89,6 +90,26 @@ export default function CierreMes() {
     return new Date(isoString).toLocaleDateString('es-CO', { day: '2-digit', month: 'short', year: 'numeric' });
   }
 
+  const metodosDisponibles = React.useMemo(() => {
+    if (!datos?.detalleIngresos) return [];
+    const set = new Set();
+    datos.detalleIngresos.forEach(d => {
+      const m = d.metodo_pago || 'No especificado';
+      set.add(m);
+    });
+    return Array.from(set);
+  }, [datos?.detalleIngresos]);
+
+  const ingresosFiltrados = React.useMemo(() => {
+    if (!datos?.detalleIngresos) return [];
+    if (filtroMetodo === 'todos') return datos.detalleIngresos;
+    return datos.detalleIngresos.filter(d => (d.metodo_pago || 'No especificado') === filtroMetodo);
+  }, [datos?.detalleIngresos, filtroMetodo]);
+
+  const subtotalIngresosFiltrados = React.useMemo(() => {
+    return ingresosFiltrados.reduce((sum, d) => sum + (Number(d.valor) || 0), 0);
+  }, [ingresosFiltrados]);
+
   return (
     <div className="page-enter">
       <div className="page-header">
@@ -160,24 +181,84 @@ export default function CierreMes() {
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
               {/* Detalle de ingresos */}
               <div className="card">
-                <h3 className="card-title" style={{ marginBottom: 16 }}>📥 Detalle de Ingresos</h3>
-                {datos.detalleIngresos?.length === 0 ? (
-                  <p style={{ color: 'var(--text-secondary)', fontSize: 13 }}>Sin ingresos registrados en este rango de fechas</p>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, flexWrap: 'wrap', gap: 8 }}>
+                  <h3 className="card-title" style={{ margin: 0 }}>📥 Detalle de Ingresos</h3>
+                  <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
+                    {ingresosFiltrados.length} {ingresosFiltrados.length === 1 ? 'recibo' : 'recibos'}
+                  </span>
+                </div>
+
+                {/* Filtro por método de pago */}
+                {datos.detalleIngresos?.length > 0 && metodosDisponibles.length > 0 && (
+                  <div style={{ marginBottom: 14 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                      <span style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 700, marginRight: 2 }}>
+                        Filtrar:
+                      </span>
+                      <button
+                        type="button"
+                        className={`btn btn-sm ${filtroMetodo === 'todos' ? 'btn-primary' : 'btn-ghost'}`}
+                        style={{ padding: '3px 9px', fontSize: 11, height: 'auto' }}
+                        onClick={() => setFiltroMetodo('todos')}
+                      >
+                        Todos ({datos.detalleIngresos.length})
+                      </button>
+                      {metodosDisponibles.map(metodo => {
+                        const count = datos.detalleIngresos.filter(d => (d.metodo_pago || 'No especificado') === metodo).length;
+                        const isSelected = filtroMetodo === metodo;
+                        return (
+                          <button
+                            key={metodo}
+                            type="button"
+                            className={`btn btn-sm ${isSelected ? 'btn-primary' : 'btn-ghost'}`}
+                            style={{ padding: '3px 9px', fontSize: 11, height: 'auto' }}
+                            onClick={() => setFiltroMetodo(metodo)}
+                          >
+                            {metodo} ({count})
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                {ingresosFiltrados.length === 0 ? (
+                  <p style={{ color: 'var(--text-secondary)', fontSize: 13, padding: '16px 0' }}>
+                    {filtroMetodo === 'todos' 
+                      ? 'Sin ingresos registrados en este rango de fechas' 
+                      : `No hay recibos con el método de pago "${filtroMetodo}"`}
+                  </p>
                 ) : (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
-                    {datos.detalleIngresos?.map((d, i) => (
-                      <div key={i} style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 0', borderBottom: '1px solid var(--border)' }}>
+                    {ingresosFiltrados.map((d, i) => (
+                      <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 0', borderBottom: '1px solid var(--border)' }}>
                         <div>
-                          <p style={{ fontSize: 13, fontWeight: 600 }}>{d.usuario}</p>
-                          <p style={{ fontSize: 11, color: 'var(--text-secondary)' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 2 }}>
+                            <p style={{ fontSize: 13, fontWeight: 600, margin: 0 }}>{d.usuario}</p>
+                            <span 
+                              className="badge" 
+                              style={{ 
+                                fontSize: 10, 
+                                background: 'rgba(22, 199, 83, 0.15)', 
+                                color: 'var(--accent-green)', 
+                                border: '1px solid rgba(22, 199, 83, 0.3)' 
+                              }}
+                            >
+                              {d.metodo_pago || 'No especificado'}
+                            </span>
+                          </div>
+                          <p style={{ fontSize: 11, color: 'var(--text-secondary)', margin: 0 }}>
                             {d.placa} · {d.tipo_vehiculo} · Subido: {formatDateLocale(d.fecha)}
                           </p>
                         </div>
                         <span style={{ fontWeight: 700, color: 'var(--accent-green)', fontSize: 14 }}>{fmt(d.valor)}</span>
                       </div>
                     ))}
-                    <div style={{ display: 'flex', justifyContent: 'flex-end', padding: '12px 0', fontWeight: 800, color: 'var(--accent-green)' }}>
-                      Total: {fmt(datos.totalIngresos)}
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 0', fontWeight: 800, color: 'var(--accent-green)' }}>
+                      <span>
+                        {filtroMetodo === 'todos' ? 'Total Ingresos:' : `Subtotal (${filtroMetodo}):`}
+                      </span>
+                      <span>{fmt(subtotalIngresosFiltrados)}</span>
                     </div>
                   </div>
                 )}

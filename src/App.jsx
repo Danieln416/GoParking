@@ -20,6 +20,7 @@ import RecibosAdmin from './pages/admin/RecibosAdmin.jsx';
 import GestionPuestos from './pages/admin/GestionPuestos.jsx';
 import CierreMes from './pages/admin/CierreMes.jsx';
 import SolicitudesAdmin from './pages/admin/SolicitudesAdmin.jsx';
+import OpcionesPago from './pages/admin/OpcionesPago.jsx';
 
 function ProtectedRoute({ children, allowedRole }) {
   const { user, loading } = useAuth();
@@ -54,6 +55,7 @@ export default function App() {
           <Route path="usuarios" element={<GestionUsuarios />} />
           <Route path="recibos" element={<RecibosAdmin />} />
           <Route path="puestos" element={<GestionPuestos />} />
+          <Route path="opciones-pago" element={<OpcionesPago />} />
           <Route path="cierre-mes" element={<CierreMes />} />
           <Route path="solicitudes" element={<SolicitudesAdmin />} />
         </Route>

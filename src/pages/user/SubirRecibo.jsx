@@ -1,7 +1,23 @@
-import React, { useState, useRef } from 'react';
-import { Upload, Camera, Image, X, CheckCircle, AlertCircle } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { 
+  Upload, 
+  Camera, 
+  Image, 
+  X, 
+  CheckCircle, 
+  AlertCircle, 
+  CreditCard, 
+  QrCode, 
+  Copy, 
+  Check, 
+  Building2, 
+  Smartphone, 
+  Wallet,
+  ChevronDown,
+  ChevronUp
+} from 'lucide-react';
 import { useAuth } from '../../context/AuthContext.jsx';
-import { apiSubirRecibo } from '../../api.js';
+import { apiSubirRecibo, apiGetCuentasPago } from '../../api.js';
 import { calcularFinPeriodoUsuario, calcularInicioPeriodoUsuario, formatPeriodoLabel } from '../../utils/periodo.js';
 
 const TODAY = new Date().toISOString().slice(0, 10);
@@ -14,12 +30,54 @@ export default function SubirRecibo() {
   const [fechaFin, setFechaFin] = useState(calcularFinPeriodoUsuario(TODAY, user?.fecha_inicio));
   const [mes, setMes] = useState(new Date().getMonth() + 1);
   const [anio, setAnio] = useState(new Date().getFullYear());
+  const [metodoPago, setMetodoPago] = useState('');
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState(null);
   const [dragOver, setDragOver] = useState(false);
   const [compressing, setCompressing] = useState(false);
+  const [cuentas, setCuentas] = useState([]);
+  const [copiedId, setCopiedId] = useState(null);
+  const [zoomQr, setZoomQr] = useState(null);
+  const [showAllCuentas, setShowAllCuentas] = useState(false);
+
   const fileInputRef = useRef();
   const cameraInputRef = useRef();
+
+  useEffect(() => {
+    async function loadCuentas() {
+      try {
+        const res = await apiGetCuentasPago();
+        if (res.success && Array.isArray(res.data)) {
+          const activas = res.data.filter(c => c.activo !== false);
+          setCuentas(activas);
+          if (activas.length > 0) {
+            setMetodoPago(prev => prev || activas[0].nombre);
+          }
+        }
+      } catch (err) {
+        console.error('Error al cargar cuentas de pago:', err);
+      }
+    }
+    loadCuentas();
+  }, []);
+
+  function handleCopy(text, id) {
+    if (!text) return;
+    navigator.clipboard.writeText(text);
+    setCopiedId(id);
+    setTimeout(() => setCopiedId(null), 2000);
+  }
+
+  function getEntityIcon(entidad) {
+    const e = (entidad || '').toLowerCase();
+    if (e.includes('nequi') || e.includes('daviplata') || e.includes('dale') || e.includes('movii')) {
+      return <Smartphone size={18} color="var(--accent-cyan)" />;
+    }
+    if (e.includes('efectivo') || e.includes('presencial')) {
+      return <Wallet size={18} color="var(--accent-green)" />;
+    }
+    return <Building2 size={18} color="var(--accent-yellow)" />;
+  }
 
   function compressImage(inputFile, maxDimension = 1200, quality = 0.82) {
     return new Promise((resolve) => {
@@ -100,7 +158,6 @@ export default function SubirRecibo() {
     setCompressing(true);
 
     try {
-      // Comprime la imagen para reducir el envío de 4MB a ~180KB
       const fileToUpload = await compressImage(file);
       setCompressing(false);
 
@@ -112,7 +169,8 @@ export default function SubirRecibo() {
         fechaFin,
         mes,
         anio,
-        fileToUpload
+        fileToUpload,
+        metodoPago || 'No especificado'
       );
       setResult(res);
       if (res.success) {
@@ -134,7 +192,99 @@ export default function SubirRecibo() {
       </div>
 
       <div className="page-body">
-        <div style={{ maxWidth: 560, margin: '0 auto' }}>
+        <div style={{ maxWidth: 620, margin: '0 auto' }}>
+
+          {/* Cuentas y Códigos QR Disponibles */}
+          {cuentas.length > 0 && (
+            <div className="card" style={{ marginBottom: 20, border: '1px solid rgba(22, 199, 83, 0.35)', background: 'linear-gradient(180deg, rgba(22, 199, 83, 0.08) 0%, rgba(6, 16, 30, 0.6) 100%)' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <CreditCard size={20} color="var(--accent-green)" />
+                  <h3 style={{ fontSize: 16, fontWeight: 700, margin: 0, color: 'var(--text-primary)' }}>
+                    Cuentas y Métodos de Pago
+                  </h3>
+                </div>
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-sm"
+                  style={{ fontSize: 12, padding: '4px 8px' }}
+                  onClick={() => setShowAllCuentas(!showAllCuentas)}
+                >
+                  {showAllCuentas ? <><ChevronUp size={14} /> Contraer</> : <><ChevronDown size={14} /> Ver todas ({cuentas.length})</>}
+                </button>
+              </div>
+
+              <p style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 14 }}>
+                Realiza tu transferencia o pago a cualquiera de las siguientes opciones oficiales:
+              </p>
+
+              <div style={{ display: 'grid', gridTemplateColumns: showAllCuentas ? '1fr' : 'repeat(auto-fit, minmax(260px, 1fr))', gap: 12 }}>
+                {(showAllCuentas ? cuentas : cuentas.slice(0, 2)).map(c => (
+                  <div
+                    key={c.id}
+                    style={{
+                      background: 'rgba(0, 0, 0, 0.35)',
+                      border: '1px solid var(--border)',
+                      borderRadius: 10,
+                      padding: 12,
+                      display: 'flex',
+                      flexDirection: 'column',
+                      justifyContent: 'space-between',
+                      gap: 8
+                    }}
+                  >
+                    <div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                          {getEntityIcon(c.entidad)}
+                          <strong style={{ fontSize: 14, color: 'var(--text-primary)' }}>{c.nombre}</strong>
+                        </div>
+                        <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{c.tipo_cuenta}</span>
+                      </div>
+
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'rgba(255,255,255,0.04)', padding: '6px 10px', borderRadius: 6, margin: '6px 0' }}>
+                        <span style={{ fontFamily: 'monospace', fontWeight: 700, fontSize: 14, color: 'var(--accent-green)' }}>
+                          {c.numero}
+                        </span>
+                        <button
+                          type="button"
+                          className="btn btn-ghost btn-sm"
+                          style={{ padding: '3px 8px', height: 'auto', fontSize: 11 }}
+                          onClick={() => handleCopy(c.numero, c.id)}
+                        >
+                          {copiedId === c.id ? <Check size={13} color="var(--accent-green)" /> : <Copy size={13} />}
+                          <span style={{ marginLeft: 4 }}>{copiedId === c.id ? 'Copiado' : 'Copiar'}</span>
+                        </button>
+                      </div>
+
+                      {c.titular && (
+                        <p style={{ fontSize: 11, color: 'var(--text-secondary)', margin: '2px 0' }}>
+                          Titular: <strong>{c.titular}</strong>
+                        </p>
+                      )}
+
+                      {c.instrucciones && (
+                        <p style={{ fontSize: 11, color: 'var(--text-muted)', fontStyle: 'italic', margin: '4px 0 0' }}>
+                          {c.instrucciones}
+                        </p>
+                      )}
+                    </div>
+
+                    {c.qr_url && (
+                      <button
+                        type="button"
+                        className="btn btn-ghost btn-sm"
+                        style={{ marginTop: 4, width: '100%', justifyContent: 'center', gap: 6, borderColor: 'rgba(22,199,83,0.3)', color: 'var(--accent-green)' }}
+                        onClick={() => setZoomQr({ url: c.qr_url, nombre: c.nombre })}
+                      >
+                        <QrCode size={14} /> Ver Código QR para Escanear
+                      </button>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           {result && (
             <div className={`card`} style={{ marginBottom: 20, borderColor: result.success ? 'rgba(16,185,129,0.4)' : 'rgba(239,68,68,0.4)', background: result.success ? 'rgba(16,185,129,0.08)' : 'rgba(239,68,68,0.08)' }}>
@@ -147,7 +297,7 @@ export default function SubirRecibo() {
                     {result.success ? '¡Recibo enviado exitosamente!' : 'Error al enviar'}
                   </p>
                   <p style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
-                    {result.success ? 'Tu recibo está en revisión. El admin lo revisará pronto.' : result.error}
+                    {result.success ? 'Tu recibo está en revisión. El administrador lo verificará pronto.' : result.error}
                   </p>
                 </div>
               </div>
@@ -156,10 +306,30 @@ export default function SubirRecibo() {
 
           <form onSubmit={handleSubmit}>
             <div className="card">
-              <h3 className="card-title">Período de pago</h3>
-              <p className="card-subtitle">Selecciona la fecha de inicio y el sistema calculará el fin del periodo.</p>
+              <h3 className="card-title">Datos del Pago y Período</h3>
+              <p className="card-subtitle">Selecciona el método de pago utilizado y la fecha de inicio del período.</p>
 
+              {/* Selector de Método de Pago */}
               <div className="form-group">
+                <label>Método / Cuenta de pago utilizado <span style={{ color: 'var(--accent-red)' }}>*</span></label>
+                <select
+                  className="form-input"
+                  value={metodoPago}
+                  onChange={e => setMetodoPago(e.target.value)}
+                  required
+                >
+                  {cuentas.map(c => (
+                    <option key={c.id} value={c.nombre}>
+                      {c.nombre} ({c.entidad} - {c.numero})
+                    </option>
+                  ))}
+                  <option value="Transferencia Bancaria">Otra Transferencia Bancaria</option>
+                  <option value="Pago en Efectivo">Pago en Efectivo</option>
+                  <option value="Otro">Otro Método</option>
+                </select>
+              </div>
+
+              <div className="form-group" style={{ marginTop: 14 }}>
                 <label>Fecha de inicio del periodo</label>
                 <input
                   type="date"
@@ -184,8 +354,8 @@ export default function SubirRecibo() {
             </div>
 
             <div className="card" style={{ marginTop: 16 }}>
-              <h3 className="card-title">Imagen del recibo</h3>
-              <p className="card-subtitle">Toma una foto o sube desde tu dispositivo (máx. 5MB)</p>
+              <h3 className="card-title">Comprobante de Pago</h3>
+              <p className="card-subtitle">Sube una foto clara o captura del comprobante bancario (máx. 15MB)</p>
 
               {!preview ? (
                 <div
@@ -196,8 +366,8 @@ export default function SubirRecibo() {
                   onClick={() => fileInputRef.current.click()}
                 >
                   <Upload size={40} style={{ marginBottom: 12, display: 'block', margin: '0 auto 12px' }} />
-                  <p>Arrastra tu imagen aquí o <span>haz clic para seleccionar</span></p>
-                  <small style={{ display: 'block', marginTop: 4 }}>JPG, PNG, WEBP · Máx. 5MB</small>
+                  <p>Arrastra tu comprobante aquí o <span>haz clic para seleccionarlo</span></p>
+                  <small style={{ display: 'block', marginTop: 4 }}>JPG, PNG, WEBP · Optimización automática</small>
                 </div>
               ) : (
                 <div className="file-preview">
@@ -266,12 +436,36 @@ export default function SubirRecibo() {
                   <><span className="spinner" style={{ width: 18, height: 18, borderWidth: 2 }} /> Subiendo al servidor...</>
                 )
               ) : (
-                <><Upload size={18} /> Enviar Recibo</>
+                <><Upload size={18} /> Enviar Comprobante de Pago</>
               )}
             </button>
           </form>
         </div>
       </div>
+
+      {/* Modal Zoom QR */}
+      {zoomQr && (
+        <div className="modal-overlay" onClick={() => setZoomQr(null)}>
+          <div className="modal-box" style={{ maxWidth: 360, textAlign: 'center', padding: 24 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
+              <h3 style={{ margin: 0, fontSize: 16 }}>Código QR — {zoomQr.nombre}</h3>
+              <button className="modal-close" onClick={() => setZoomQr(null)}>
+                <X size={16} />
+              </button>
+            </div>
+            <div style={{ background: '#fff', padding: 14, borderRadius: 12, display: 'inline-block', boxShadow: '0 8px 30px rgba(0,0,0,0.5)' }}>
+              <img 
+                src={zoomQr.url} 
+                alt="QR Ampliado" 
+                style={{ width: '100%', maxWidth: 260, height: 'auto', display: 'block' }} 
+              />
+            </div>
+            <p style={{ marginTop: 12, fontSize: 12, color: 'var(--text-secondary)' }}>
+              Abre la app de tu billetera o banco y escanea para pagar directamente.
+            </p>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

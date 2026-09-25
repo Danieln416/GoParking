@@ -22,7 +22,8 @@ const READ_ACTIONS = new Set([
   'getSolicitudes',
   'getCierreMes',
   'getGastos',
-  'getParkingMapUrl'
+  'getParkingMapUrl',
+  'getCuentasPago'
 ]);
 
 // Helper para almacenamiento en sessionStorage
@@ -308,7 +309,8 @@ export const apiSubirRecibo = (
   fechaFin,
   mes,
   anio,
-  file
+  file,
+  metodoPago = 'No especificado'
 ) => {
   return new Promise(resolve => {
     const reader = new FileReader();
@@ -326,13 +328,15 @@ export const apiSubirRecibo = (
         fechaFin,
         mes,
         anio,
+        metodoPago,
+        metodo_pago: metodoPago,
         base64Data,
         fileName: file.name,
         mimeType: file.type
       });
 
       if (result.success) {
-        invalidateReads(['getRecibos', 'getAdminResumen']);
+        invalidateReads(['getRecibos', 'getAdminResumen', 'getCierreMes']);
       }
 
       resolve(result);
@@ -449,3 +453,122 @@ export const apiGetGastos = (startDate, endDate, options = {}) =>
 
 export const apiGetParkingMapUrl = (options = {}) =>
   callAPI('getParkingMapUrl', {}, options);
+
+// ============================================================
+// CUENTAS Y OPCIONES DE PAGO
+// ============================================================
+
+const CUENTAS_STORAGE_KEY = 'goparking_cuentas_pago';
+
+const DEFAULT_CUENTAS_PAGO = [
+  {
+    id: 'cuenta-nequi-1',
+    nombre: 'Nequi Principal',
+    entidad: 'Nequi',
+    tipo_cuenta: 'Billetera Digital',
+    numero: '3001234567',
+    titular: 'Administración GoParking',
+    qr_url: '',
+    instrucciones: 'Enviar comprobante indicando tu nombre y número de bahía.',
+    activo: true
+  },
+  {
+    id: 'cuenta-bancolombia-1',
+    nombre: 'Bancolombia Ahorros',
+    entidad: 'Bancolombia',
+    tipo_cuenta: 'Cuenta de Ahorros',
+    numero: '123-456789-01',
+    titular: 'Administración GoParking',
+    qr_url: '',
+    instrucciones: 'Transferencia directa o QR Bancolombia.',
+    activo: true
+  },
+  {
+    id: 'cuenta-daviplata-1',
+    nombre: 'Daviplata',
+    entidad: 'Daviplata',
+    tipo_cuenta: 'Billetera Digital',
+    numero: '3009876543',
+    titular: 'Administración GoParking',
+    qr_url: '',
+    instrucciones: 'Acepta transferencias interbancarias inmediatas.',
+    activo: true
+  },
+  {
+    id: 'cuenta-efectivo-1',
+    nombre: 'Pago en Efectivo',
+    entidad: 'Efectivo',
+    tipo_cuenta: 'Presencial',
+    numero: 'Oficina / En mano',
+    titular: 'Administrador / Vigilancia',
+    qr_url: '',
+    instrucciones: 'Pagar directamente en la oficina de administración.',
+    activo: true
+  }
+];
+
+function getLocalCuentasPago() {
+  try {
+    const raw = localStorage.getItem(CUENTAS_STORAGE_KEY);
+    if (!raw) {
+      localStorage.setItem(CUENTAS_STORAGE_KEY, JSON.stringify(DEFAULT_CUENTAS_PAGO));
+      return DEFAULT_CUENTAS_PAGO;
+    }
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) && parsed.length > 0 ? parsed : DEFAULT_CUENTAS_PAGO;
+  } catch {
+    return DEFAULT_CUENTAS_PAGO;
+  }
+}
+
+function setLocalCuentasPago(cuentas) {
+  try {
+    localStorage.setItem(CUENTAS_STORAGE_KEY, JSON.stringify(cuentas));
+  } catch (e) {
+    console.error('Error guardando cuentas en localStorage:', e);
+  }
+}
+
+export const apiGetCuentasPago = (options = {}) =>
+  callAPI('getCuentasPago', {}, options).then(result => {
+    if (result.success && Array.isArray(result.data) && result.data.length > 0) {
+      setLocalCuentasPago(result.data);
+      return result;
+    }
+    return { success: true, data: getLocalCuentasPago(), isLocal: true };
+  }).catch(() => {
+    return { success: true, data: getLocalCuentasPago(), isLocal: true };
+  });
+
+export const apiGuardarCuentaPago = (data) => {
+  const current = getLocalCuentasPago();
+  const id = data.id || `cuenta-${Date.now()}`;
+  const nuevaCuenta = { ...data, id, activo: data.activo !== undefined ? data.activo : true };
+  const exists = current.some(c => String(c.id) === String(id));
+  const updated = exists 
+    ? current.map(c => String(c.id) === String(id) ? nuevaCuenta : c)
+    : [...current, nuevaCuenta];
+  setLocalCuentasPago(updated);
+
+  return callAPI('guardarCuentaPago', nuevaCuenta).then(result => {
+    if (result.success) invalidateReads(['getCuentasPago']);
+    return { success: true, data: result.data || nuevaCuenta };
+  }).catch(() => {
+    invalidateReads(['getCuentasPago']);
+    return { success: true, data: nuevaCuenta, isLocal: true };
+  });
+};
+
+export const apiEliminarCuentaPago = (id) => {
+  const current = getLocalCuentasPago();
+  const updated = current.filter(c => String(c.id) !== String(id));
+  setLocalCuentasPago(updated);
+
+  return callAPI('eliminarCuentaPago', { id }).then(result => {
+    if (result.success) invalidateReads(['getCuentasPago']);
+    return { success: true };
+  }).catch(() => {
+    invalidateReads(['getCuentasPago']);
+    return { success: true, isLocal: true };
+  });
+};

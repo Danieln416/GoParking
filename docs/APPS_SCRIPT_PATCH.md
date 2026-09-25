@@ -230,7 +230,21 @@ function reciboPertenecePeriodo(recibo, startDate, endDate) {
 
 ---
 
-## 8. Pasos para Implementar en Google Apps Script
+## 8. Gestión de Opciones de Pago y Códigos QR (`cuentas_pago`)
+
+En `Code.gs` se incorporó:
+- **Hoja `cuentas_pago`:** Estructura con `id, nombre, entidad, tipo_cuenta, numero, titular, qr_url, file_id, instrucciones, activo`.
+- **Acciones en `doPost` y `doGet`:**
+  - `getCuentasPago`: Obtiene la lista de cuentas bancarias y billeteras configuradas.
+  - `guardarCuentaPago`: Guarda o edita una cuenta, permitiendo subir imagen de QR directamente a Google Drive con acceso público `https://lh3.googleusercontent.com/d/FILE_ID`.
+  - `eliminarCuentaPago`: Marca la cuenta como inactiva.
+- **Campo `metodo_pago` en Recibos y Cierre de Mes:**
+  - `subirRecibo`: Almacena el método/cuenta seleccionado por el usuario en la columna `metodo_pago`.
+  - `getCierreMes`: Devuelve `metodo_pago` en cada elemento de `detalleIngresos`, permitiendo el filtrado y subtotalizado por método en el panel admin.
+
+---
+
+## 9. Pasos para Implementar en Google Apps Script
 
 1. Abre tu proyecto de **Google Apps Script** asociado al parqueadero.
 2. Copia el contenido completo de [`docs/Code.gs`](file:///c:/Users/Daniel/OneDrive/Documentos/prigma/GoParking/docs/Code.gs) y pégalo en el editor de Apps Script reemplazando el código anterior.

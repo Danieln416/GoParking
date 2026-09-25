@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Outlet, NavLink, useNavigate } from 'react-router-dom';
-import { Car, LayoutDashboard, Users, Receipt, MapPin, Calculator, MessageSquare, LogOut, Menu, X } from 'lucide-react';
+import { Car, LayoutDashboard, Users, Receipt, MapPin, Calculator, MessageSquare, CreditCard, LogOut, Menu, X } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext.jsx';
 
 export default function AdminLayout() {
@@ -46,6 +46,11 @@ export default function AdminLayout() {
           <NavLink to="/admin/puestos" className={({ isActive }) => `sidebar-link ${isActive ? 'active' : ''}`}>
             <MapPin className="nav-icon" />
             Gestión de Puestos
+          </NavLink>
+
+          <NavLink to="/admin/opciones-pago" className={({ isActive }) => `sidebar-link ${isActive ? 'active' : ''}`}>
+            <CreditCard className="nav-icon" />
+            Opciones de Pago
           </NavLink>
 
           <NavLink to="/admin/cierre-mes" className={({ isActive }) => `sidebar-link ${isActive ? 'active' : ''}`}>

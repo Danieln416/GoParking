@@ -8,14 +8,23 @@ import {
   Car,
   Bike,
   MapPin,
-  AlertCircle
+  AlertCircle,
+  CreditCard,
+  QrCode,
+  Copy,
+  Check,
+  Building2,
+  Smartphone,
+  Wallet,
+  X
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext.jsx';
 import {
   apiGetRecibos,
   apiGetSolicitudes,
   apiGetPuestosUsuario,
-  apiGetPuestos
+  apiGetPuestos,
+  apiGetCuentasPago
 } from '../../api.js';
 import { Link } from 'react-router-dom';
 import { formatPeriodoLabel, formatDateLabel, getUserBillingInfo } from '../../utils/periodo.js';
@@ -382,6 +391,10 @@ export default function UserDashboard() {
   const [solicitudes, setSolicitudes] = useState([]);
   const [puestosAsignados, setPuestosAsignados] = useState([]);
   const [todosLosPuestos, setTodosLosPuestos] = useState([]);
+  const [cuentasPago, setCuentasPago] = useState([]);
+  const [showCuentasModal, setShowCuentasModal] = useState(false);
+  const [copiedId, setCopiedId] = useState(null);
+  const [zoomQr, setZoomQr] = useState(null);
   const [mapUrl, setMapUrl] = useState('');
   const [loading, setLoading] = useState(true);
   const [loadingMapa, setLoadingMapa] = useState(true);
@@ -398,11 +411,12 @@ export default function UserDashboard() {
         setMapError(false);
         setLoadingMapa(false);
 
-        const [r, s, p, allP] = await Promise.all([
+        const [r, s, p, allP, c] = await Promise.all([
           apiGetRecibos(user.id),
           apiGetSolicitudes(user.id),
           apiGetPuestosUsuario(user.id),
-          apiGetPuestos()
+          apiGetPuestos(),
+          apiGetCuentasPago()
         ]);
 
         if (r.success) {
@@ -419,6 +433,10 @@ export default function UserDashboard() {
 
         if (allP && allP.success) {
           setTodosLosPuestos(allP.data || []);
+        }
+
+        if (c && c.success && Array.isArray(c.data)) {
+          setCuentasPago(c.data.filter(item => item.activo !== false));
         }
 
       } catch (error) {
@@ -477,6 +495,24 @@ export default function UserDashboard() {
   ]
     .filter(Boolean)
     .join(' · ');
+
+  function handleCopy(text, id) {
+    if (!text) return;
+    navigator.clipboard.writeText(text);
+    setCopiedId(id);
+    setTimeout(() => setCopiedId(null), 2000);
+  }
+
+  function getEntityIcon(entidad) {
+    const e = (entidad || '').toLowerCase();
+    if (e.includes('nequi') || e.includes('daviplata') || e.includes('dale') || e.includes('movii')) {
+      return <Smartphone size={18} color="var(--accent-cyan)" />;
+    }
+    if (e.includes('efectivo') || e.includes('presencial')) {
+      return <Wallet size={18} color="var(--accent-green)" />;
+    }
+    return <Building2 size={18} color="var(--accent-yellow)" />;
+  }
 
   return (
     <div className="page-enter">
@@ -565,11 +601,21 @@ export default function UserDashboard() {
                   <span>🗓️ Próximo vencimiento: <strong>{formatDateLabel(billingInfo.cutoffDate)}</strong></span>
                 </div>
 
-                {(billingInfo.status === 'vencido' || billingInfo.status === 'pendiente') && (
-                  <Link to="/usuario/subir-recibo" className="btn btn-primary btn-sm">
-                    <Upload size={14} /> Subir comprobante de pago
-                  </Link>
-                )}
+                <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+                  {(billingInfo.status === 'vencido' || billingInfo.status === 'pendiente') && (
+                    <Link to="/usuario/subir-recibo" className="btn btn-primary btn-sm">
+                      <Upload size={14} /> Subir comprobante de pago
+                    </Link>
+                  )}
+                  <button
+                    type="button"
+                    className="btn btn-ghost btn-sm"
+                    style={{ borderColor: 'rgba(22,199,83,0.35)', color: 'var(--accent-green)' }}
+                    onClick={() => setShowCuentasModal(true)}
+                  >
+                    <QrCode size={14} /> Ver cuentas y QR de pago
+                  </button>
+                </div>
               </div>
             </div>
           </div>
@@ -1152,6 +1198,129 @@ export default function UserDashboard() {
           </p>
         )}
       </div>
+
+      {/* Modal Cuentas y Métodos de Pago */}
+      {showCuentasModal && (
+        <div className="modal-overlay" onClick={e => e.target === e.currentTarget && setShowCuentasModal(false)}>
+          <div className="modal-box" style={{ maxWidth: 540 }}>
+            <div className="modal-header">
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <CreditCard size={20} color="var(--accent-green)" />
+                <h2 style={{ margin: 0, fontSize: 17 }}>Cuentas y Métodos de Pago</h2>
+              </div>
+              <button className="modal-close" onClick={() => setShowCuentasModal(false)}>
+                <X size={16} />
+              </button>
+            </div>
+
+            <div className="modal-body" style={{ maxHeight: '75vh', overflowY: 'auto' }}>
+              <p style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 16 }}>
+                Puedes transferir tu mensualidad a cualquiera de las siguientes cuentas habilitadas. Recuerda conservar y subir tu comprobante de pago.
+              </p>
+
+              {cuentasPago.length === 0 ? (
+                <div style={{ textAlign: 'center', padding: '24px 0', color: 'var(--text-muted)' }}>
+                  <CreditCard size={32} style={{ margin: '0 auto 8px', display: 'block' }} />
+                  <p>No hay cuentas de pago activas configuradas en este momento.</p>
+                </div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                  {cuentasPago.map(c => (
+                    <div
+                      key={c.id}
+                      style={{
+                        background: 'rgba(0, 0, 0, 0.3)',
+                        border: '1px solid var(--border)',
+                        borderRadius: 10,
+                        padding: 14
+                      }}
+                    >
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                          {getEntityIcon(c.entidad)}
+                          <strong style={{ fontSize: 15, color: 'var(--text-primary)' }}>{c.nombre}</strong>
+                        </div>
+                        <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{c.tipo_cuenta}</span>
+                      </div>
+
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'rgba(255,255,255,0.04)', padding: '8px 12px', borderRadius: 8, margin: '8px 0' }}>
+                        <span style={{ fontFamily: 'monospace', fontWeight: 700, fontSize: 15, color: 'var(--accent-green)' }}>
+                          {c.numero}
+                        </span>
+                        <button
+                          type="button"
+                          className="btn btn-ghost btn-sm"
+                          style={{ padding: '4px 10px', height: 'auto', fontSize: 12 }}
+                          onClick={() => handleCopy(c.numero, c.id)}
+                        >
+                          {copiedId === c.id ? <Check size={14} color="var(--accent-green)" /> : <Copy size={14} />}
+                          <span style={{ marginLeft: 4 }}>{copiedId === c.id ? 'Copiado' : 'Copiar'}</span>
+                        </button>
+                      </div>
+
+                      {c.titular && (
+                        <p style={{ fontSize: 12, color: 'var(--text-secondary)', margin: '4px 0' }}>
+                          Titular: <strong>{c.titular}</strong>
+                        </p>
+                      )}
+
+                      {c.instrucciones && (
+                        <p style={{ fontSize: 12, color: 'var(--text-muted)', fontStyle: 'italic', margin: '4px 0 8px' }}>
+                          "{c.instrucciones}"
+                        </p>
+                      )}
+
+                      {c.qr_url && (
+                        <button
+                          type="button"
+                          className="btn btn-ghost btn-sm"
+                          style={{ marginTop: 6, width: '100%', justifyContent: 'center', gap: 6, borderColor: 'rgba(22,199,83,0.3)', color: 'var(--accent-green)' }}
+                          onClick={() => setZoomQr({ url: c.qr_url, nombre: c.nombre })}
+                        >
+                          <QrCode size={14} /> Ver y Escanear Código QR
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="modal-footer" style={{ justifyContent: 'space-between' }}>
+              <Link to="/usuario/subir-recibo" className="btn btn-primary btn-sm" onClick={() => setShowCuentasModal(false)}>
+                <Upload size={14} /> Ir a subir recibo
+              </Link>
+              <button type="button" className="btn btn-ghost btn-sm" onClick={() => setShowCuentasModal(false)}>
+                Cerrar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Zoom QR */}
+      {zoomQr && (
+        <div className="modal-overlay" onClick={() => setZoomQr(null)} style={{ zIndex: 1100 }}>
+          <div className="modal-box" style={{ maxWidth: 360, textAlign: 'center', padding: 24 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
+              <h3 style={{ margin: 0, fontSize: 16 }}>Código QR — {zoomQr.nombre}</h3>
+              <button className="modal-close" onClick={() => setZoomQr(null)}>
+                <X size={16} />
+              </button>
+            </div>
+            <div style={{ background: '#fff', padding: 14, borderRadius: 12, display: 'inline-block', boxShadow: '0 8px 30px rgba(0,0,0,0.5)' }}>
+              <img 
+                src={zoomQr.url} 
+                alt="QR Ampliado" 
+                style={{ width: '100%', maxWidth: 260, height: 'auto', display: 'block' }} 
+              />
+            </div>
+            <p style={{ marginTop: 12, fontSize: 12, color: 'var(--text-secondary)' }}>
+              Abre la app de tu banco o billetera digital para escanear y pagar.
+            </p>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

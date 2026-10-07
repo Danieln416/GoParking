@@ -18,6 +18,7 @@ import {
   Smartphone
 } from 'lucide-react';
 import { apiGetCuentasPago, apiGuardarCuentaPago, apiEliminarCuentaPago } from '../../api.js';
+import { normalizeMediaUrl } from '../../utils/media.js';
 
 export default function OpcionesPago() {
   const [cuentas, setCuentas] = useState([]);
@@ -348,7 +349,7 @@ export default function OpcionesPago() {
                         onClick={() => setZoomQr({ url: cuenta.qr_url, nombre: cuenta.nombre })}
                       >
                         <img 
-                          src={cuenta.qr_url} 
+                          src={normalizeMediaUrl(cuenta.qr_url)} 
                           alt="QR" 
                           style={{ width: 54, height: 54, objectFit: 'cover', borderRadius: 6, background: '#fff', padding: 2 }} 
                         />
@@ -613,7 +614,7 @@ export default function OpcionesPago() {
             </div>
             <div style={{ background: '#fff', padding: 16, borderRadius: 12, display: 'inline-block', boxShadow: '0 8px 30px rgba(0,0,0,0.5)' }}>
               <img 
-                src={zoomQr.url} 
+                src={normalizeMediaUrl(zoomQr.url)} 
                 alt="Código QR Ampliado" 
                 style={{ width: '100%', maxWidth: 280, height: 'auto', display: 'block' }} 
               />

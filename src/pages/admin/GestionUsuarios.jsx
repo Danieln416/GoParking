@@ -6,13 +6,19 @@ import {
   Search,
   X,
   CheckCircle,
-  AlertCircle
+  AlertCircle,
+  UserCheck,
+  UserX,
+  Key
 } from 'lucide-react';
 import {
   apiGetUsuarios,
   apiCrearUsuario,
   apiActualizarUsuario,
   apiEliminarUsuario,
+  apiRetirarUsuario,
+  apiReactivarUsuario,
+  apiEliminarUsuarioPermanente,
   apiGetPuestos,
   apiAsignarPuestosUsuario
 } from '../../api.js';
@@ -57,6 +63,7 @@ export default function GestionUsuarios() {
   const [saving, setSaving] = useState(false);
   const [search, setSearch] = useState('');
   const [toast, setToast] = useState(null);
+  const [activeTab, setActiveTab] = useState('activos');
 
   useEffect(() => {
     loadUsuarios();
@@ -379,11 +386,9 @@ async function handleSave(event) {
 
     const mensaje = editingUser
       ? 'Usuario actualizado correctamente'
-      : `Usuario creado. Contraseña inicial: ${
-          resUsuario?.data?.passwordInicial ||
-          payload.contrasena ||
-          '123456'
-        }`;
+      : payload.contrasena
+        ? `Usuario creado. Contraseña inicial: ${payload.contrasena}`
+        : 'Usuario precargado exitosamente (sin contraseña)';
 
     showToast('success', mensaje);
     closeModal();
@@ -401,31 +406,87 @@ async function handleSave(event) {
   }
 }
 
-  async function handleDelete(usuario) {
+  async function handleRetirar(usuario) {
     const confirmar = window.confirm(
-      `¿Eliminar al usuario ${usuario.nombre}?\n\n` +
-        'El usuario quedará inactivo y sus puestos quedarán libres.'
+      `¿Retirar al usuario "${usuario.nombre}"?\n\n` +
+      'El usuario quedará registrado como RETIRADO en el historial de la aplicación y sus puestos asignados quedarán libres para otros clientes.'
     );
 
     if (!confirmar) return;
 
     try {
-      const res = await apiEliminarUsuario(usuario.id);
+      const res = await apiRetirarUsuario(usuario.id);
 
       if (res.success) {
-        showToast('success', 'Usuario eliminado y puestos liberados');
+        showToast('success', `${usuario.nombre} fue marcado como retirado y sus puestos quedaron libres`);
         await loadUsuarios();
       } else {
-        showToast('error', res.error || 'No fue posible eliminar el usuario');
+        showToast('error', res.error || 'No fue posible retirar al usuario');
+      }
+    } catch {
+      showToast('error', 'Error de conexión al retirar el usuario');
+    }
+  }
+
+  async function handleReactivar(usuario) {
+    const confirmar = window.confirm(
+      `¿Reactivar al usuario "${usuario.nombre}"?\n\n` +
+      'El usuario volverá a estar ACTIVO en el parqueadero.'
+    );
+
+    if (!confirmar) return;
+
+    try {
+      const res = await apiReactivarUsuario(usuario.id);
+
+      if (res.success) {
+        showToast('success', `${usuario.nombre} fue reactivado correctamente`);
+        await loadUsuarios();
+      } else {
+        showToast('error', res.error || 'No fue posible reactivar al usuario');
+      }
+    } catch {
+      showToast('error', 'Error de conexión al reactivar el usuario');
+    }
+  }
+
+  async function handleEliminarPermanente(usuario) {
+    const confirmar = window.confirm(
+      `⚠️ ACCIÓN IRREVERSIBLE:\n¿Estás seguro de ELIMINAR DEFINITIVAMENTE a "${usuario.nombre}"?\n\n` +
+      'Esta acción borrará al usuario por completo de la base de datos (incluyendo registros y solicitudes asociadas).'
+    );
+
+    if (!confirmar) return;
+
+    try {
+      const res = await apiEliminarUsuarioPermanente(usuario.id);
+
+      if (res.success) {
+        showToast('success', `${usuario.nombre} fue eliminado definitivamente de la base de datos`);
+        await loadUsuarios();
+      } else {
+        showToast('error', res.error || 'No fue posible eliminar al usuario');
       }
     } catch {
       showToast('error', 'Error de conexión al eliminar el usuario');
     }
   }
 
+  const countTotal = usuarios.length;
+  const countActivos = usuarios.filter(u => Number(u.activo) !== 0 && String(u.activo) !== 'false').length;
+  const countRetirados = usuarios.filter(u => Number(u.activo) === 0 || String(u.activo) === 'false').length;
+  const countPrecargados = usuarios.filter(u => (Number(u.activo) !== 0 && String(u.activo) !== 'false') && (!u.has_password && !u.contrasena)).length;
+
   const searchText = search.toLowerCase().trim();
 
   const filtered = usuarios.filter(usuario => {
+    const isRetired = Number(usuario.activo) === 0 || String(usuario.activo) === 'false';
+    const hasPassword = Boolean(usuario.has_password || (usuario.contrasena && String(usuario.contrasena).trim().length > 0));
+
+    if (activeTab === 'activos' && isRetired) return false;
+    if (activeTab === 'retirados' && !isRetired) return false;
+    if (activeTab === 'precargados' && (isRetired || hasPassword)) return false;
+
     if (!searchText) return true;
 
     return (
@@ -458,6 +519,41 @@ async function handleSave(event) {
       </div>
 
       <div className="page-body">
+        <div style={{ display: 'flex', gap: 8, marginBottom: 18, flexWrap: 'wrap' }}>
+          <button
+            type="button"
+            className={`btn ${activeTab === 'activos' ? 'btn-primary' : 'btn-ghost'}`}
+            onClick={() => setActiveTab('activos')}
+            style={{ fontSize: 13, padding: '6px 14px' }}
+          >
+            Activos ({countActivos})
+          </button>
+          <button
+            type="button"
+            className={`btn ${activeTab === 'precargados' ? 'btn-primary' : 'btn-ghost'}`}
+            onClick={() => setActiveTab('precargados')}
+            style={{ fontSize: 13, padding: '6px 14px' }}
+          >
+            Precargados sin contraseña ({countPrecargados})
+          </button>
+          <button
+            type="button"
+            className={`btn ${activeTab === 'retirados' ? 'btn-primary' : 'btn-ghost'}`}
+            onClick={() => setActiveTab('retirados')}
+            style={{ fontSize: 13, padding: '6px 14px' }}
+          >
+            Retirados ({countRetirados})
+          </button>
+          <button
+            type="button"
+            className={`btn ${activeTab === 'todos' ? 'btn-primary' : 'btn-ghost'}`}
+            onClick={() => setActiveTab('todos')}
+            style={{ fontSize: 13, padding: '6px 14px' }}
+          >
+            Todos ({countTotal})
+          </button>
+        </div>
+
         <div
           style={{
             position: 'relative',
@@ -496,6 +592,7 @@ async function handleSave(event) {
               <thead>
                 <tr>
                   <th>Usuario</th>
+                  <th>Estado</th>
                   <th>Cédula</th>
                   <th>Placas</th>
                   <th>Vehículo</th>
@@ -511,130 +608,235 @@ async function handleSave(event) {
                 {filtered.length === 0 ? (
                   <tr>
                     <td
-                      colSpan={9}
+                      colSpan={10}
                       style={{
                         textAlign: 'center',
                         padding: 40,
                         color: 'var(--text-secondary)'
                       }}
                     >
-                      Sin usuarios registrados
+                      Sin usuarios registrados en este filtro
                     </td>
                   </tr>
                 ) : (
-                  filtered.map(usuario => (
-                    <tr key={usuario.id}>
-                      <td>
-                        <div>
-                          <p style={{ fontWeight: 600 }}>
-                            {usuario.nombre}
-                          </p>
+                  filtered.map(usuario => {
+                    const isRetired = Number(usuario.activo) === 0 || String(usuario.activo) === 'false';
+                    const hasPassword = Boolean(usuario.has_password || (usuario.contrasena && String(usuario.contrasena).trim().length > 0));
 
-                          <p
+                    return (
+                      <tr key={usuario.id} style={isRetired ? { opacity: 0.75 } : {}}>
+                        <td>
+                          <div>
+                            <p style={{ fontWeight: 600 }}>
+                              {usuario.nombre}
+                            </p>
+
+                            <p
+                              style={{
+                                fontSize: 11,
+                                color: 'var(--text-secondary)'
+                              }}
+                            >
+                              {usuario.correo || 'Sin correo registrado'}
+                            </p>
+                          </div>
+                        </td>
+
+                        <td>
+                          {isRetired ? (
+                            <span
+                              style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: 4,
+                                fontSize: 11,
+                                fontWeight: 700,
+                                padding: '3px 8px',
+                                borderRadius: 6,
+                                background: 'rgba(239, 68, 68, 0.15)',
+                                color: '#ef4444',
+                                border: '1px solid rgba(239, 68, 68, 0.3)',
+                                whiteSpace: 'nowrap'
+                              }}
+                            >
+                              <UserX size={12} /> Retirado
+                            </span>
+                          ) : !hasPassword ? (
+                            <span
+                              style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: 4,
+                                fontSize: 11,
+                                fontWeight: 700,
+                                padding: '3px 8px',
+                                borderRadius: 6,
+                                background: 'rgba(234, 179, 8, 0.15)',
+                                color: '#eab308',
+                                border: '1px solid rgba(234, 179, 8, 0.3)',
+                                whiteSpace: 'nowrap'
+                              }}
+                              title="Usuario precargado desde Excel (sin contraseña aún)"
+                            >
+                              <Key size={12} /> Precargado
+                            </span>
+                          ) : (
+                            <span
+                              style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: 4,
+                                fontSize: 11,
+                                fontWeight: 700,
+                                padding: '3px 8px',
+                                borderRadius: 6,
+                                background: 'rgba(34, 197, 94, 0.15)',
+                                color: '#22c55e',
+                                border: '1px solid rgba(34, 197, 94, 0.3)',
+                                whiteSpace: 'nowrap'
+                              }}
+                            >
+                              <CheckCircle size={12} /> Activo
+                            </span>
+                          )}
+                        </td>
+
+                        <td>
+                          <span
                             style={{
-                              fontSize: 11,
-                              color: 'var(--text-secondary)'
+                              fontFamily: 'monospace',
+                              fontWeight: 600,
+                              fontSize: 13
                             }}
                           >
-                            {usuario.correo || 'Sin correo registrado'}
-                          </p>
-                        </div>
-                      </td>
+                            {usuario.cedula || '—'}
+                          </span>
+                        </td>
 
-                      <td>
-                        <span
-                          style={{
-                            fontFamily: 'monospace',
-                            fontWeight: 600,
-                            fontSize: 13
-                          }}
-                        >
-                          {usuario.cedula || '—'}
-                        </span>
-                      </td>
-
-                      <td>
-                        <span
-                          style={{
-                            fontFamily: 'monospace',
-                            fontWeight: 700,
-                            color: 'var(--accent-cyan)',
-                            fontSize: 12
-                          }}
-                        >
-                          {placasUsuario(usuario)}
-                        </span>
-                      </td>
-
-                      <td>
-                        {vehicleEmoji(usuario.tipo_vehiculo)}{' '}
-                        {usuario.tipo_vehiculo || 'Sin vehículo'}
-                      </td>
-
-                      <td>
-                        <span style={{ fontSize: 12 }}>
-                          {usuario.tipo_tarifa || '—'}
-                        </span>
-                      </td>
-
-                      <td>
-                        <span
-                          style={{
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            fontSize: 11,
-                            fontWeight: 600,
-                            padding: '3px 8px',
-                            borderRadius: 6,
-                            background: 'rgba(22, 199, 83, 0.12)',
-                            color: 'var(--accent-green)',
-                            border: '1px solid rgba(22, 199, 83, 0.25)',
-                            whiteSpace: 'nowrap'
-                          }}
-                        >
-                          Día {parseDate(usuario.fecha_inicio)?.getDate() || '—'}
-                        </span>
-                      </td>
-
-                      <td>
-                        <span
-                          style={{
-                            fontWeight: 700,
-                            color: 'var(--accent-green)'
-                          }}
-                        >
-                          $
-                          {Number(usuario.valor_tarifa || 0).toLocaleString(
-                            'es-CO'
-                          )}
-                        </span>
-                      </td>
-
-                      <td style={{ color: 'var(--text-secondary)' }}>
-                        {usuario.celular || '—'}
-                      </td>
-
-                      <td>
-                        <div className="td-actions">
-                          <button
-                            className="btn btn-ghost btn-icon"
-                            onClick={() => openEdit(usuario)}
-                            title="Editar"
+                        <td>
+                          <span
+                            style={{
+                              fontFamily: 'monospace',
+                              fontWeight: 700,
+                              color: 'var(--accent-cyan)',
+                              fontSize: 12
+                            }}
                           >
-                            <Edit2 size={15} />
-                          </button>
+                            {placasUsuario(usuario)}
+                          </span>
+                        </td>
 
-                          <button
-                            className="btn btn-danger btn-icon"
-                            onClick={() => handleDelete(usuario)}
-                            title="Eliminar"
+                        <td>
+                          {vehicleEmoji(usuario.tipo_vehiculo)}{' '}
+                          {usuario.tipo_vehiculo || 'Sin vehículo'}
+                        </td>
+
+                        <td>
+                          <span style={{ fontSize: 12 }}>
+                            {usuario.tipo_tarifa || '—'}
+                          </span>
+                        </td>
+
+                        <td>
+                          <span
+                            style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              fontSize: 11,
+                              fontWeight: 600,
+                              padding: '3px 8px',
+                              borderRadius: 6,
+                              background: 'rgba(22, 199, 83, 0.12)',
+                              color: 'var(--accent-green)',
+                              border: '1px solid rgba(22, 199, 83, 0.25)',
+                              whiteSpace: 'nowrap'
+                            }}
                           >
-                            <Trash2 size={15} />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))
+                            Día {parseDate(usuario.fecha_inicio)?.getDate() || '—'}
+                          </span>
+                        </td>
+
+                        <td>
+                          <span
+                            style={{
+                              fontWeight: 700,
+                              color: 'var(--accent-green)'
+                            }}
+                          >
+                            $
+                            {Number(usuario.valor_tarifa || 0).toLocaleString(
+                              'es-CO'
+                            )}
+                          </span>
+                        </td>
+
+                        <td style={{ color: 'var(--text-secondary)' }}>
+                          {usuario.celular || '—'}
+                        </td>
+
+                        <td>
+                          <div className="td-actions">
+                            {isRetired ? (
+                              <>
+                                <button
+                                  className="btn btn-ghost btn-icon"
+                                  onClick={() => handleReactivar(usuario)}
+                                  title="Reactivar usuario"
+                                  style={{ color: 'var(--accent-green)' }}
+                                >
+                                  <UserCheck size={16} />
+                                </button>
+
+                                <button
+                                  className="btn btn-ghost btn-icon"
+                                  onClick={() => openEdit(usuario)}
+                                  title="Editar datos"
+                                >
+                                  <Edit2 size={15} />
+                                </button>
+
+                                <button
+                                  className="btn btn-danger btn-icon"
+                                  onClick={() => handleEliminarPermanente(usuario)}
+                                  title="Eliminar definitivamente de la base de datos"
+                                >
+                                  <Trash2 size={15} />
+                                </button>
+                              </>
+                            ) : (
+                              <>
+                                <button
+                                  className="btn btn-ghost btn-icon"
+                                  onClick={() => openEdit(usuario)}
+                                  title={!hasPassword ? "Asignar contraseña / acceso" : "Editar usuario"}
+                                  style={!hasPassword ? { color: '#eab308' } : {}}
+                                >
+                                  {!hasPassword ? <Key size={15} /> : <Edit2 size={15} />}
+                                </button>
+
+                                <button
+                                  className="btn btn-ghost btn-icon"
+                                  onClick={() => handleRetirar(usuario)}
+                                  title="Retirar del parqueadero (conservar registro)"
+                                  style={{ color: '#f59e0b' }}
+                                >
+                                  <UserX size={15} />
+                                </button>
+
+                                <button
+                                  className="btn btn-danger btn-icon"
+                                  onClick={() => handleEliminarPermanente(usuario)}
+                                  title="Eliminar definitivamente de la base de datos"
+                                >
+                                  <Trash2 size={15} />
+                                </button>
+                              </>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })
                 )}
               </tbody>
             </table>
@@ -667,6 +869,44 @@ async function handleSave(event) {
 
             <form onSubmit={handleSave}>
               <div className="modal-body">
+                {editingUser && (Number(editingUser.activo) === 0 || String(editingUser.activo) === 'false') && (
+                  <div
+                    style={{
+                      background: 'rgba(239, 68, 68, 0.12)',
+                      border: '1px solid rgba(239, 68, 68, 0.3)',
+                      borderRadius: 8,
+                      padding: '12px 14px',
+                      marginBottom: 16
+                    }}
+                  >
+                    <p style={{ margin: 0, fontSize: 13, color: '#ef4444', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <UserX size={15} /> Usuario Retirado
+                    </p>
+                    <p style={{ margin: '4px 0 0', fontSize: 12, color: 'var(--text-secondary)' }}>
+                      Este usuario está en el registro histórico como retirado. Puedes editar sus datos o reactivarlo desde el botón verde de la tabla.
+                    </p>
+                  </div>
+                )}
+
+                {editingUser && !editingUser.has_password && !editingUser.contrasena && (Number(editingUser.activo) !== 0 && String(editingUser.activo) !== 'false') && (
+                  <div
+                    style={{
+                      background: 'rgba(234, 179, 8, 0.12)',
+                      border: '1px solid rgba(234, 179, 8, 0.3)',
+                      borderRadius: 8,
+                      padding: '12px 14px',
+                      marginBottom: 16
+                    }}
+                  >
+                    <p style={{ margin: 0, fontSize: 13, color: '#eab308', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <Key size={15} /> Usuario precargado sin contraseña
+                    </p>
+                    <p style={{ margin: '4px 0 0', fontSize: 12, color: 'var(--text-secondary)' }}>
+                      Este usuario fue importado desde el registro y aún no tiene acceso configurado. Asígnale un correo y una contraseña para habilitar su inicio de sesión en la aplicación.
+                    </p>
+                  </div>
+                )}
+
                 <div className="form-row">
                   <div className="form-group">
                     <label>Nombre completo *</label>
@@ -1024,8 +1264,10 @@ async function handleSave(event) {
                 <div className="form-group">
                   <label>
                     {editingUser
-                      ? 'Nueva contraseña (dejar vacío para no cambiar)'
-                      : 'Contraseña inicial'}
+                      ? (!editingUser.has_password && !editingUser.contrasena
+                          ? 'Asignar contraseña de acceso'
+                          : 'Nueva contraseña (dejar vacío para no cambiar)')
+                      : 'Contraseña de acceso (opcional)'}
                   </label>
 
                   <input
@@ -1038,7 +1280,13 @@ async function handleSave(event) {
                         contrasena: event.target.value
                       }))
                     }
-                    placeholder={editingUser ? '••••••••' : 'Ej: 123456'}
+                    placeholder={
+                      editingUser
+                        ? (!editingUser.has_password && !editingUser.contrasena
+                            ? 'Ej: 123456 (asigna contraseña para acceso)'
+                            : '••••••••')
+                        : 'Opcional (dejar vacío para solo precargar)'
+                    }
                   />
 
                   {!editingUser && (
@@ -1048,7 +1296,7 @@ async function handleSave(event) {
                         fontSize: 11
                       }}
                     >
-                      Si lo dejas vacío, se asignará “123456” por defecto.
+                      Opcional: Si lo dejas vacío, el usuario quedará precargado en la base de datos sin contraseña para que puedas configurársela después.
                     </small>
                   )}
                 </div>

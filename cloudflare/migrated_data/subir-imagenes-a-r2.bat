@@ -1,0 +1,26 @@
+@echo off
+echo Subiendo recibos y codigos QR a Cloudflare R2...
+REM Requiere tener wrangler instalado y configurado
+npx wrangler r2 object put goparking-media/recibos/79e070ca-9d95-4ec9-9115-8b758966315d.jpg --file="images/recibos/79e070ca-9d95-4ec9-9115-8b758966315d.jpg"
+npx wrangler r2 object put goparking-media/recibos/89c98dc4-d1f7-45fd-84ee-6e53a9777fe1.jpg --file="images/recibos/89c98dc4-d1f7-45fd-84ee-6e53a9777fe1.jpg"
+npx wrangler r2 object put goparking-media/recibos/0bf779de-e9c9-4bed-903a-0698ea3ace12.jpg --file="images/recibos/0bf779de-e9c9-4bed-903a-0698ea3ace12.jpg"
+npx wrangler r2 object put goparking-media/recibos/0a9dfd0a-1744-4534-bc12-6d54a2cad25c.jpg --file="images/recibos/0a9dfd0a-1744-4534-bc12-6d54a2cad25c.jpg"
+npx wrangler r2 object put goparking-media/recibos/4b91155d-061d-4f5a-abeb-04cabd44bf70.jpg --file="images/recibos/4b91155d-061d-4f5a-abeb-04cabd44bf70.jpg"
+npx wrangler r2 object put goparking-media/recibos/caa8204f-ab5d-40d6-868e-cacbc95a834d.jpg --file="images/recibos/caa8204f-ab5d-40d6-868e-cacbc95a834d.jpg"
+npx wrangler r2 object put goparking-media/recibos/5cc45c6c-d1f2-45bf-af53-74e8c40f2029.jpg --file="images/recibos/5cc45c6c-d1f2-45bf-af53-74e8c40f2029.jpg"
+npx wrangler r2 object put goparking-media/recibos/ee87b709-451d-4246-9daa-6007e05cc9ff.jpg --file="images/recibos/ee87b709-451d-4246-9daa-6007e05cc9ff.jpg"
+npx wrangler r2 object put goparking-media/recibos/edabd0c3-4a01-4792-80bf-6416d705dff2.jpg --file="images/recibos/edabd0c3-4a01-4792-80bf-6416d705dff2.jpg"
+npx wrangler r2 object put goparking-media/recibos/c1393916-efc9-4229-b6b9-dbe951263048.jpg --file="images/recibos/c1393916-efc9-4229-b6b9-dbe951263048.jpg"
+npx wrangler r2 object put goparking-media/recibos/6c53a726-4ad5-4b08-813d-ca3fb8f7af59.jpg --file="images/recibos/6c53a726-4ad5-4b08-813d-ca3fb8f7af59.jpg"
+npx wrangler r2 object put goparking-media/recibos/baac606e-1aff-4b1a-af3c-746c737e57fd.jpg --file="images/recibos/baac606e-1aff-4b1a-af3c-746c737e57fd.jpg"
+npx wrangler r2 object put goparking-media/recibos/34afd658-5bf7-4bf8-8b00-f538892a5934.jpg --file="images/recibos/34afd658-5bf7-4bf8-8b00-f538892a5934.jpg"
+npx wrangler r2 object put goparking-media/recibos/2d010a66-f754-40f5-984d-64b3947c20a7.jpg --file="images/recibos/2d010a66-f754-40f5-984d-64b3947c20a7.jpg"
+npx wrangler r2 object put goparking-media/recibos/57d5489d-4b1f-4773-9c11-f41e50150356.jpg --file="images/recibos/57d5489d-4b1f-4773-9c11-f41e50150356.jpg"
+npx wrangler r2 object put goparking-media/recibos/abcaf453-a247-40ca-89f2-789db04f6980.jpg --file="images/recibos/abcaf453-a247-40ca-89f2-789db04f6980.jpg"
+npx wrangler r2 object put goparking-media/recibos/74b88962-6bc0-4904-9fdc-bcbd235cb19d.jpg --file="images/recibos/74b88962-6bc0-4904-9fdc-bcbd235cb19d.jpg"
+npx wrangler r2 object put goparking-media/recibos/7167fe4f-4524-40c2-b3a3-04e6d9d73308.jpg --file="images/recibos/7167fe4f-4524-40c2-b3a3-04e6d9d73308.jpg"
+npx wrangler r2 object put goparking-media/recibos/e7ebd64b-2252-44bd-8da9-a715e39f1267.jpg --file="images/recibos/e7ebd64b-2252-44bd-8da9-a715e39f1267.jpg"
+npx wrangler r2 object put goparking-media/recibos/a44c7d1b-fc27-4db1-a4f3-e47687468c10.jpg --file="images/recibos/a44c7d1b-fc27-4db1-a4f3-e47687468c10.jpg"
+npx wrangler r2 object put goparking-media/recibos/e6268e2e-cb1c-4aac-a2c6-19b6db019e3d.jpg --file="images/recibos/e6268e2e-cb1c-4aac-a2c6-19b6db019e3d.jpg"
+npx wrangler r2 object put goparking-media/recibos/a7e83a4b-3542-499a-b60f-049b09fa463f.jpg --file="images/recibos/a7e83a4b-3542-499a-b60f-049b09fa463f.jpg"
+echo Todas las imagenes fueron subidas a Cloudflare R2 con exito!

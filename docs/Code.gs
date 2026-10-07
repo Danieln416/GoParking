@@ -1545,31 +1545,30 @@ function reciboPertenecePeriodo(recibo, startDate, endDate) {
   const start = new Date(startDate + 'T00:00:00');
   const end = new Date(endDate + 'T23:59:59');
 
-  // 1. Si tiene fecha_subida (momento del pago/recaudo real en la caja del parqueadero)
+  // 1. Momento de recaudo real en caja del parqueadero (fecha_subida):
+  // La contabilidad del parqueadero y el cierre contable del administrador se rigen
+  // estrictamente por el momento en que ingresó el dinero a la caja.
   if (recibo.fecha_subida) {
     const upload = new Date(recibo.fecha_subida);
-    if (!isNaN(upload.getTime()) && upload >= start && upload <= end) {
-      return true;
+    if (!isNaN(upload.getTime())) {
+      return upload >= start && upload <= end;
     }
   }
 
-  // 2. Si su fecha_inicio registrada cae dentro del rango del cierre contable
+  // 2. Solo para registros históricos antiguos que no tengan fecha_subida registrada:
   if (recibo.fecha_inicio) {
     const inicioStr = normalizarFechaTexto(recibo.fecha_inicio);
-    if (inicioStr >= startDate && inicioStr <= endDate) {
-      return true;
+    if (inicioStr) {
+      const inicioDate = new Date(inicioStr + 'T00:00:00');
+      if (!isNaN(inicioDate.getTime())) {
+        return inicioDate >= start && inicioDate <= end;
+      }
     }
-  }
-
-  // 3. Compatibilidad con mes/año heredado
-  if (recibo.mes && recibo.anio) {
-    const inicio = new Date(startDate + 'T00:00:00');
-    return Number(recibo.mes) === (inicio.getMonth() + 1) &&
-      Number(recibo.anio) === inicio.getFullYear();
   }
 
   return false;
 }
+
 
 function periodoEstaCerrado(startDate, endDate) {
   const sheet = asegurarHojaCierres();

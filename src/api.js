@@ -1,9 +1,13 @@
 // ============================================================
-// API — Conexión optimizada con Google Apps Script
+// API — Conexión con Cloudflare Worker (o Google Apps Script)
 // ============================================================
 
-const GAS_URL =
-  'https://script.google.com/macros/s/AKfycbzmLzNwfJuD4p6sSkE82xhxCGV7-M_CMVKbrXosv6hua2qsYvRWGvMmSl0RO4oiDDY2-A/exec';
+const DEFAULT_API_URL =
+  'https://goparking-api.daniram-parking.workers.dev';
+
+const API_URL = (typeof import.meta !== 'undefined' && import.meta.env?.VITE_API_URL) || DEFAULT_API_URL;
+
+
 
 // Configuración de caché
 const READ_CACHE_TTL = 2000; // Solo 2 segundos para deduplicar componentes que se montan al mismo tiempo
@@ -88,7 +92,7 @@ async function fetchFresh(action, payload, cacheKey, forceRefresh = false) {
   }
 
   const query = new URLSearchParams(queryParams);
-  const requestUrl = useGet ? `${GAS_URL}?${query}` : GAS_URL;
+  const requestUrl = useGet ? `${API_URL}?${query}` : API_URL;
   const requestOptions = {
     method: useGet ? 'GET' : 'POST',
     cache: 'no-store',
@@ -170,7 +174,7 @@ export const apiGetUsuarios = (options = {}) =>
 
 export const apiGetAdminResumen = (options = {}) =>
   callAPI('getAdminResumen', {}, options).then(result => {
-    if (result.success || !String(result.error || '').includes('Acción no reconocida')) {
+    if (result.success || !String(result.error || '').toLowerCase().includes('no reconocida')) {
       return result;
     }
 
@@ -219,6 +223,25 @@ export const apiEliminarUsuario = id =>
     if (result.success) invalidateReads(['getUsuarios', 'getAdminResumen', 'getPuestos']);
     return result;
   });
+
+export const apiRetirarUsuario = id =>
+  callAPI('retirarUsuario', { id }).then(result => {
+    if (result.success) invalidateReads(['getUsuarios', 'getAdminResumen', 'getPuestos']);
+    return result;
+  });
+
+export const apiReactivarUsuario = id =>
+  callAPI('reactivarUsuario', { id }).then(result => {
+    if (result.success) invalidateReads(['getUsuarios', 'getAdminResumen', 'getPuestos']);
+    return result;
+  });
+
+export const apiEliminarUsuarioPermanente = id =>
+  callAPI('eliminarUsuarioPermanente', { id, permanente: true }).then(result => {
+    if (result.success) invalidateReads(['getUsuarios', 'getAdminResumen', 'getPuestos']);
+    return result;
+  });
+
 
 // ============================================================
 // RECIBOS
@@ -516,3 +539,10 @@ export const apiEliminarCuentaPago = (id) => {
     return { success: true, isLocal: true };
   });
 };
+
+// ============================================================
+// NOTIFICACIONES WHATSAPP (Automático en Cloudflare)
+// ============================================================
+
+export const apiDispararWhatsAppMora = () =>
+  callAPI('ejecutarNotificacionesMora');

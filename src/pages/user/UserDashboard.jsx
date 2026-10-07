@@ -28,7 +28,7 @@ import {
 } from '../../api.js';
 import { Link } from 'react-router-dom';
 import { formatPeriodoLabel, formatDateLabel, getUserBillingInfo } from '../../utils/periodo.js';
-import { getReceiptMediaUrl, getReceiptViewerUrl } from '../../utils/media.js';
+import { getReceiptMediaUrl, getReceiptViewerUrl, normalizeMediaUrl } from '../../utils/media.js';
 
 const LOCAL_PARKING_MAP_URL = '/parqueadero.png';
 
@@ -1310,7 +1310,7 @@ export default function UserDashboard() {
             </div>
             <div style={{ background: '#fff', padding: 14, borderRadius: 12, display: 'inline-block', boxShadow: '0 8px 30px rgba(0,0,0,0.5)' }}>
               <img 
-                src={zoomQr.url} 
+                src={normalizeMediaUrl(zoomQr.url)} 
                 alt="QR Ampliado" 
                 style={{ width: '100%', maxWidth: 260, height: 'auto', display: 'block' }} 
               />

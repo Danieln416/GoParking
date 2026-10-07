@@ -17,8 +17,15 @@ import {
   ChevronUp
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext.jsx';
-import { apiSubirRecibo, apiGetCuentasPago } from '../../api.js';
-import { calcularFinPeriodoUsuario, calcularInicioPeriodoUsuario, formatPeriodoLabel } from '../../utils/periodo.js';
+import { apiSubirRecibo, apiGetCuentasPago, apiGetRecibos } from '../../api.js';
+import {
+  calcularFinPeriodoUsuario,
+  calcularInicioPeriodoUsuario,
+  formatPeriodoLabel,
+  getUserPeriodOptions,
+  parseDate
+} from '../../utils/periodo.js';
+import { normalizeMediaUrl } from '../../utils/media.js';
 
 const TODAY = new Date().toISOString().slice(0, 10);
 
@@ -26,6 +33,9 @@ export default function SubirRecibo() {
   const { user } = useAuth();
   const [file, setFile] = useState(null);
   const [preview, setPreview] = useState(null);
+  const [userReceipts, setUserReceipts] = useState([]);
+  const [selectedPeriodId, setSelectedPeriodId] = useState('current');
+  const [customDateMode, setCustomDateMode] = useState(false);
   const [fechaInicio, setFechaInicio] = useState(calcularInicioPeriodoUsuario(TODAY, user?.fecha_inicio));
   const [fechaFin, setFechaFin] = useState(calcularFinPeriodoUsuario(TODAY, user?.fecha_inicio));
   const [mes, setMes] = useState(new Date().getMonth() + 1);
@@ -42,6 +52,7 @@ export default function SubirRecibo() {
 
   const fileInputRef = useRef();
   const cameraInputRef = useRef();
+
 
   useEffect(() => {
     async function loadCuentas() {
@@ -60,6 +71,45 @@ export default function SubirRecibo() {
     }
     loadCuentas();
   }, []);
+
+  useEffect(() => {
+    if (user?.id) {
+      apiGetRecibos(user.id).then(res => {
+        if (res.success && Array.isArray(res.data)) {
+          setUserReceipts(res.data);
+        }
+      }).catch(err => console.error('Error al cargar recibos del usuario:', err));
+    }
+  }, [user?.id]);
+
+  const periodData = React.useMemo(() => {
+    return getUserPeriodOptions(user?.fecha_inicio, TODAY, userReceipts);
+  }, [user?.fecha_inicio, userReceipts]);
+
+  useEffect(() => {
+    if (!customDateMode && periodData?.options?.length) {
+      const opt = periodData.options.find(o => o.id === periodData.defaultOptionId) || periodData.options[0];
+      if (opt) {
+        setSelectedPeriodId(opt.id);
+        setFechaInicio(opt.fechaInicio);
+        setFechaFin(opt.fechaFin);
+        const [year, month] = opt.fechaInicio.split('-').map(Number);
+        setAnio(year || new Date().getFullYear());
+        setMes(month || new Date().getMonth() + 1);
+      }
+    }
+  }, [periodData?.defaultOptionId, customDateMode]);
+
+  function handleSelectPeriod(opt) {
+    setSelectedPeriodId(opt.id);
+    setCustomDateMode(false);
+    setFechaInicio(opt.fechaInicio);
+    setFechaFin(opt.fechaFin);
+    const [year, month] = opt.fechaInicio.split('-').map(Number);
+    setAnio(year || new Date().getFullYear());
+    setMes(month || new Date().getMonth() + 1);
+  }
+
 
   function handleCopy(text, id) {
     if (!text) return;
@@ -329,27 +379,122 @@ export default function SubirRecibo() {
                 </select>
               </div>
 
-              <div className="form-group" style={{ marginTop: 14 }}>
-                <label>Fecha de inicio del periodo</label>
-                <input
-                  type="date"
-                  className="form-input"
-                  value={fechaInicio}
-                  onChange={e => {
-                    const value = e.target.value;
-                    const periodoInicio = calcularInicioPeriodoUsuario(value, user?.fecha_inicio);
-                    const [year, month] = periodoInicio.split('-').map(Number);
-                    setFechaInicio(periodoInicio);
-                    setFechaFin(calcularFinPeriodoUsuario(periodoInicio, user?.fecha_inicio));
-                    setAnio(year || new Date().getFullYear());
-                    setMes(month || new Date().getMonth() + 1);
-                  }}
-                />
+              {/* Selector de Período Inteligente */}
+              <div className="form-group" style={{ marginTop: 16 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6, flexWrap: 'wrap', gap: 6 }}>
+                  <label style={{ margin: 0 }}>
+                    Período mensual a pagar <span style={{ color: 'var(--accent-red)' }}>*</span>
+                  </label>
+                  <span style={{ fontSize: 11, color: 'var(--accent-green)', fontWeight: 700 }}>
+                    Tu corte: Día {parseDate(user?.fecha_inicio)?.getDate() || '-'} de cada mes
+                  </span>
+                </div>
+                <p style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 10 }}>
+                  Selecciona la mensualidad a la cual corresponde este pago:
+                </p>
+
+                <div style={{ display: 'grid', gap: 10 }}>
+                  {periodData.options.map(opt => {
+                    const isSelected = !customDateMode && selectedPeriodId === opt.id;
+                    return (
+                      <div
+                        key={opt.id}
+                        onClick={() => handleSelectPeriod(opt)}
+                        style={{
+                          cursor: 'pointer',
+                          padding: '12px 14px',
+                          borderRadius: 10,
+                          border: isSelected ? '2px solid var(--accent-green)' : '1px solid var(--border)',
+                          background: isSelected ? 'rgba(22, 199, 83, 0.1)' : 'var(--bg-secondary)',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          gap: 12,
+                          transition: 'all 0.15s ease'
+                        }}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                          <input
+                            type="radio"
+                            name="periodOption"
+                            checked={isSelected}
+                            onChange={() => handleSelectPeriod(opt)}
+                            style={{ accentColor: 'var(--accent-green)', width: 16, height: 16, cursor: 'pointer' }}
+                          />
+                          <div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                              <strong style={{ fontSize: 13, color: isSelected ? 'var(--accent-green)' : 'var(--text-primary)' }}>
+                                {opt.label}
+                              </strong>
+                              {opt.isRecommended && (
+                                <span className="badge badge-approved" style={{ fontSize: 10, padding: '2px 6px' }}>
+                                  Sugerido
+                                </span>
+                              )}
+                            </div>
+                            <p style={{ fontSize: 13, fontWeight: 700, color: isSelected ? 'var(--text-primary)' : 'var(--text-secondary)', margin: '3px 0 0' }}>
+                              {opt.periodText}
+                            </p>
+                          </div>
+                        </div>
+
+                        <span style={{ fontSize: 11, color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
+                          {opt.cutoffText}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* Opción Personalizada */}
+                <div style={{ marginTop: 10 }}>
+                  <button
+                    type="button"
+                    className="btn btn-ghost btn-sm"
+                    style={{ fontSize: 12, color: 'var(--text-secondary)', padding: '4px 8px' }}
+                    onClick={() => setCustomDateMode(!customDateMode)}
+                  >
+                    {customDateMode ? '▲ Ocultar fecha personalizada' : '▼ ¿Deseas especificar una fecha diferente?'}
+                  </button>
+
+                  {customDateMode && (
+                    <div style={{ marginTop: 8, padding: 12, background: 'var(--bg-secondary)', borderRadius: 8, border: '1px dashed var(--border)' }}>
+                      <label style={{ fontSize: 12, color: 'var(--text-secondary)', display: 'block', marginBottom: 6 }}>
+                        Fecha de inicio personalizada:
+                      </label>
+                      <input
+                        type="date"
+                        className="form-input"
+                        value={fechaInicio}
+                        onChange={e => {
+                          const value = e.target.value;
+                          const periodoInicio = calcularInicioPeriodoUsuario(value, user?.fecha_inicio);
+                          const [year, month] = periodoInicio.split('-').map(Number);
+                          setFechaInicio(periodoInicio);
+                          setFechaFin(calcularFinPeriodoUsuario(periodoInicio, user?.fecha_inicio));
+                          setAnio(year || new Date().getFullYear());
+                          setMes(month || new Date().getMonth() + 1);
+                        }}
+                      />
+                    </div>
+                  )}
+                </div>
               </div>
 
-              <div className="card" style={{ background: 'var(--bg-secondary)', padding: 14, marginTop: 8 }}>
-                <p style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 4 }}>Periodo calculado</p>
-                <p style={{ fontWeight: 700, color: 'var(--text-primary)' }}>{formatPeriodoLabel({ fecha_inicio: fechaInicio, fecha_fin: fechaFin })}</p>
+              <div className="card" style={{ background: 'var(--bg-secondary)', padding: 14, marginTop: 12, border: '1px solid rgba(22,199,83,0.3)' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div>
+                    <p style={{ fontSize: 11, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: 0.5, margin: 0, fontWeight: 700 }}>
+                      Período a registrar:
+                    </p>
+                    <p style={{ fontWeight: 800, fontSize: 15, color: 'var(--accent-green)', margin: '4px 0 0' }}>
+                      {formatPeriodoLabel({ fecha_inicio: fechaInicio, fecha_fin: fechaFin })}
+                    </p>
+                  </div>
+                  <span className="badge badge-approved" style={{ fontSize: 11 }}>
+                    Día {parseDate(user?.fecha_inicio)?.getDate() || '-'}
+                  </span>
+                </div>
               </div>
             </div>
 
@@ -455,7 +600,7 @@ export default function SubirRecibo() {
             </div>
             <div style={{ background: '#fff', padding: 14, borderRadius: 12, display: 'inline-block', boxShadow: '0 8px 30px rgba(0,0,0,0.5)' }}>
               <img 
-                src={zoomQr.url} 
+                src={normalizeMediaUrl(zoomQr.url)} 
                 alt="QR Ampliado" 
                 style={{ width: '100%', maxWidth: 260, height: 'auto', display: 'block' }} 
               />

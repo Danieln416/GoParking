@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Receipt, Check, X, ExternalLink, Filter, CheckCircle, AlertCircle } from 'lucide-react';
-import { apiGetRecibos, apiGetUsuarios, apiAprobarRecibo, apiRechazarRecibo } from '../../api.js';
+import { Receipt, Check, X, ExternalLink, Filter, CheckCircle, AlertCircle, MessageSquare, Send } from 'lucide-react';
+import { apiGetRecibos, apiGetUsuarios, apiAprobarRecibo, apiRechazarRecibo, apiDispararWhatsAppMora } from '../../api.js';
 import {
   formatPeriodoLabel,
   getClosedPeriods,
@@ -93,9 +93,44 @@ export default function RecibosAdmin() {
     setProcessing(false);
   }
 
+  const [runningSweep, setRunningSweep] = useState(false);
+
   function showToast(type, msg) {
     setToast({ type, msg });
     setTimeout(() => setToast(null), 3500);
+  }
+
+  async function handleDispararBarrido() {
+    setRunningSweep(true);
+    try {
+      const res = await apiDispararWhatsAppMora();
+      if (res.success) {
+        showToast('success', `Barrido finalizado: ${res.enviados || 0} enviados, ${res.omitidos || 0} ya notificados hoy`);
+      } else {
+        showToast('error', res.error || 'Error al ejecutar barrido de WhatsApp');
+      }
+    } catch (err) {
+      showToast('error', 'Error al conectar: ' + err.message);
+    } finally {
+      setRunningSweep(false);
+    }
+  }
+
+  function buildWhatsAppLink(user) {
+    let num = String(user.celular || user.telefono || '').replace(/\D/g, '');
+    if (num.length === 10 && num.startsWith('3')) num = '57' + num;
+    const primerNombre = (user.nombre || '').split(' ')[0];
+    const valorFmt = `$${Number(user.valor_tarifa || 0).toLocaleString('es-CO')}`;
+    const dias = Math.abs(user.billing?.diffDays || 0);
+    const corte = user.billing?.cutoffDate || '';
+
+    const msg = `Hola ${primerNombre} 👋, te saludamos del Parqueadero GoParking 🚗.\n\n` +
+      `Te recordamos amablemente que tu mensualidad presenta *${dias} día(s) de vencimiento* (Fecha de corte: ${corte}).\n\n` +
+      `💰 *Valor a cancelar:* ${valorFmt}\n\n` +
+      `📌 Por favor sube tu comprobante en la aplicación web una vez realizado el pago para mantener tu registro al día.\n\n` +
+      `¡Muchas gracias por tu puntualidad!`;
+
+    return `https://wa.me/${num}?text=${encodeURIComponent(msg)}`;
   }
 
   const filtered = useMemo(() => recibos.filter(r => {
@@ -109,7 +144,7 @@ export default function RecibosAdmin() {
 
   const unpaidUsers = useMemo(() => {
     return usuarios
-      .filter(user => user.rol !== 'admin' && String(user.activo) !== 'false')
+      .filter(user => user.rol !== 'admin' && Number(user.activo) !== 0 && String(user.activo) !== 'false')
       .map(user => {
         const userReceipts = recibos.filter(r =>
           String(r.usuario_id || r.user_id || r.id_usuario || '') === String(user.id) ||
@@ -177,12 +212,25 @@ export default function RecibosAdmin() {
         <div className="card" style={{ marginBottom: 20, borderColor: unpaidUsers.some(u => u.billing.status === 'vencido') ? 'rgba(239, 68, 68, 0.4)' : unpaidUsers.length ? 'rgba(245,158,11,0.4)' : undefined }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6, flexWrap: 'wrap', gap: 8 }}>
             <h3 className="card-title" style={{ margin: 0 }}>Estado de Pagos (Cortes Individuales)</h3>
-            <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
-              {unpaidUsers.filter(u => u.billing.status === 'vencido').length} vencidos · {unpaidUsers.filter(u => u.billing.status === 'pendiente').length} pendientes
-            </span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
+                {unpaidUsers.filter(u => u.billing.status === 'vencido').length} vencidos · {unpaidUsers.filter(u => u.billing.status === 'pendiente').length} pendientes
+              </span>
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm"
+                style={{ fontSize: 12, color: '#25D366', borderColor: 'rgba(37, 211, 102, 0.4)', padding: '4px 10px' }}
+                onClick={handleDispararBarrido}
+                disabled={runningSweep}
+                title="Ejecutar barrido automático de Cloudflare para notificar morosos"
+              >
+                {runningSweep ? <span className="spinner" style={{ width: 12, height: 12, borderWidth: 2 }} /> : <Send size={13} />}
+                Barrido Automático WhatsApp
+              </button>
+            </div>
           </div>
           <p className="card-subtitle" style={{ marginBottom: 12 }}>
-            Cada usuario tiene su fecha de corte según su fecha de inicio registrada.
+            Cada usuario tiene su fecha de corte según su fecha de inicio registrada. Puedes enviar recordatorios manuales o usar el barrido automático diario (8:00 AM).
           </p>
           {unpaidUsers.length ? (
             <div style={{ display: 'grid', gap: 8, maxHeight: 250, overflowY: 'auto' }}>
@@ -208,13 +256,35 @@ export default function RecibosAdmin() {
                       · Corte día {user.billing.billingDay} de cada mes
                     </span>
                   </div>
-                  <div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                     <span
                       className={`badge ${user.billing.status === 'vencido' ? 'badge-rejected' : 'badge-review'}`}
                       style={{ fontSize: 11 }}
                     >
                       {user.billing.badge}
                     </span>
+                    {(user.celular || user.telefono) && (
+                      <a
+                        href={buildWhatsAppLink(user)}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="btn btn-sm"
+                        style={{
+                          background: 'rgba(37, 211, 102, 0.15)',
+                          color: '#25D366',
+                          border: '1px solid rgba(37, 211, 102, 0.35)',
+                          padding: '3px 8px',
+                          fontSize: 11,
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: 4,
+                          textDecoration: 'none'
+                        }}
+                        title={`Abrir WhatsApp para recordar pago a ${user.nombre}`}
+                      >
+                        <MessageSquare size={12} /> WhatsApp
+                      </a>
+                    )}
                   </div>
                 </div>
               ))}

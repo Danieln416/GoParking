@@ -193,36 +193,32 @@ En `subirRecibo`, cambia la URL almacenada para usar el CDN abierto de Google (`
 
 ---
 
-## 7. Lógica de Cierre de Mes (Ventana 12 al 11 y Cortes Individuales)
+## 7. Lógica de Cierre de Mes (Ventana 12 al 11 y Fecha Real de Recaudo)
 
-En `reciboPertenecePeriodo`, se contabilizan los recibos aprobados recaudados durante la ventana contable del administrador (del 12 al 11), permitiendo que cada usuario conserve su corte individual:
+En `reciboPertenecePeriodo`, se contabilizan estrictamente los recibos aprobados según su **momento real de ingreso a caja (`fecha_subida`)** dentro de la ventana contable del administrador (ej. del 12 al 11). Los recibos recaudados antes del día 12 pertenecen al ciclo contable anterior:
 
 ```javascript
 function reciboPertenecePeriodo(recibo, startDate, endDate) {
   const start = new Date(startDate + 'T00:00:00');
   const end = new Date(endDate + 'T23:59:59');
 
-  // 1. Momento de recaudo real en caja del parqueadero
+  // 1. Momento de recaudo real en caja del parqueadero (fecha_subida)
   if (recibo.fecha_subida) {
     const upload = new Date(recibo.fecha_subida);
-    if (!isNaN(upload.getTime()) && upload >= start && upload <= end) {
-      return true;
+    if (!isNaN(upload.getTime())) {
+      return upload >= start && upload <= end;
     }
   }
 
-  // 2. Si su fecha_inicio cae dentro del rango contable
+  // 2. Solo para registros históricos que no tengan fecha_subida registrada
   if (recibo.fecha_inicio) {
     const inicioStr = normalizarFechaTexto(recibo.fecha_inicio);
-    if (inicioStr >= startDate && inicioStr <= endDate) {
-      return true;
+    if (inicioStr) {
+      const inicioDate = new Date(inicioStr + 'T00:00:00');
+      if (!isNaN(inicioDate.getTime())) {
+        return inicioDate >= start && inicioDate <= end;
+      }
     }
-  }
-
-  // 3. Compatibilidad con mes/año heredado
-  if (recibo.mes && recibo.anio) {
-    const inicio = new Date(startDate + 'T00:00:00');
-    return Number(recibo.mes) === (inicio.getMonth() + 1) &&
-      Number(recibo.anio) === inicio.getFullYear();
   }
 
   return false;

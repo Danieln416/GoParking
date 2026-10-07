@@ -1,7 +1,15 @@
 import React, { useState, useEffect } from 'react';
-import { Calculator, Plus, Trash2, TrendingUp, TrendingDown, DollarSign, CheckCircle, AlertCircle, X, Download } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { Calculator, Plus, Trash2, TrendingUp, TrendingDown, DollarSign, CheckCircle, AlertCircle, X, Download, ChevronLeft, ChevronRight, Calendar, Receipt } from 'lucide-react';
 import { apiGetCierreMes, apiAgregarGasto, apiEliminarGasto, apiCerrarMes } from '../../api.js';
-import { calcularFinPeriodo, calcularInicioPeriodo, saveClosedPeriod } from '../../utils/periodo.js';
+import {
+  calcularFinPeriodo,
+  calcularInicioPeriodo,
+  getAdminClosingPeriod,
+  getPreviousAdminClosingPeriod,
+  getNextAdminClosingPeriod,
+  saveClosedPeriod
+} from '../../utils/periodo.js';
 
 const getFormattedDate = (date) => {
   return date.toISOString().split('T')[0];
@@ -22,18 +30,27 @@ export default function CierreMes() {
   const [gastoForm, setGastoForm] = useState({ descripcion: '', valor: '', fecha: todayStr });
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState(null);
+  const [incluirEnRevision, setIncluirEnRevision] = useState(false);
 
   useEffect(() => {
     loadCierre();
   }, []);
 
-  async function loadCierre() {
-    if (!startDate || !endDate) { showToast('error', 'Selecciona el rango de fechas'); return; }
+  async function loadCierre(overrideStart, overrideEnd) {
+    const s = overrideStart || startDate;
+    const e = overrideEnd || endDate;
+    if (!s || !e) { showToast('error', 'Selecciona el rango de fechas'); return; }
     setLoading(true);
-    const res = await apiGetCierreMes(startDate, endDate);
+    const res = await apiGetCierreMes(s, e);
     if (res.success) setDatos(res.data);
     else showToast('error', res.error || 'Error al cargar');
     setLoading(false);
+  }
+
+  function handleSelectCycle(period) {
+    setStartDate(period.startDate);
+    setEndDate(period.endDate);
+    loadCierre(period.startDate, period.endDate);
   }
 
   async function handleAddGasto(e) {
@@ -65,13 +82,14 @@ export default function CierreMes() {
       showToast('error', 'Selecciona el rango que deseas cerrar');
       return;
     }
-    if (!confirm(`¿Cerrar el período del ${startDate} al ${endDate}? Los recibos quedarán ocultos por defecto.`)) return;
+    if (!confirm(`¿Cerrar el período del ${startDate} al ${endDate}? Los recibos quedarán archivados.`)) return;
 
     setSaving(true);
     const res = await apiCerrarMes(startDate, endDate);
     if (res.success) {
       saveClosedPeriod(startDate, endDate);
       showToast('success', 'Período cerrado correctamente');
+      loadCierre();
     } else {
       showToast('error', res.error || 'El backend no pudo cerrar este período');
     }
@@ -90,21 +108,39 @@ export default function CierreMes() {
     return new Date(isoString).toLocaleDateString('es-CO', { day: '2-digit', month: 'short', year: 'numeric' });
   }
 
-  const metodosDisponibles = React.useMemo(() => {
+  // Ingresos del período contable (recibos aprobados + opcionalmente en revisión para cálculo proyectado)
+  const ingresosValidados = React.useMemo(() => {
     if (!datos?.detalleIngresos) return [];
+    if (incluirEnRevision && datos.recibosPendientes?.length > 0) {
+      return [...datos.detalleIngresos, ...datos.recibosPendientes];
+    }
+    return datos.detalleIngresos;
+  }, [datos?.detalleIngresos, datos?.recibosPendientes, incluirEnRevision]);
+
+  const totalIngresos = React.useMemo(() => {
+    return ingresosValidados.reduce((sum, d) => sum + (Number(d.valor) || 0), 0);
+  }, [ingresosValidados]);
+
+  const totalGastos = React.useMemo(() => {
+    return (datos?.gastos || []).reduce((sum, g) => sum + (Number(g.valor) || 0), 0);
+  }, [datos?.gastos]);
+
+  const balance = totalIngresos - totalGastos;
+  const cantidadRecibos = ingresosValidados.length;
+
+  const metodosDisponibles = React.useMemo(() => {
     const set = new Set();
-    datos.detalleIngresos.forEach(d => {
+    ingresosValidados.forEach(d => {
       const m = d.metodo_pago || 'No especificado';
       set.add(m);
     });
     return Array.from(set);
-  }, [datos?.detalleIngresos]);
+  }, [ingresosValidados]);
 
   const ingresosFiltrados = React.useMemo(() => {
-    if (!datos?.detalleIngresos) return [];
-    if (filtroMetodo === 'todos') return datos.detalleIngresos;
-    return datos.detalleIngresos.filter(d => (d.metodo_pago || 'No especificado') === filtroMetodo);
-  }, [datos?.detalleIngresos, filtroMetodo]);
+    if (filtroMetodo === 'todos') return ingresosValidados;
+    return ingresosValidados.filter(d => (d.metodo_pago || 'No especificado') === filtroMetodo);
+  }, [ingresosValidados, filtroMetodo]);
 
   const subtotalIngresosFiltrados = React.useMemo(() => {
     return ingresosFiltrados.reduce((sum, d) => sum + (Number(d.valor) || 0), 0);
@@ -124,8 +160,46 @@ export default function CierreMes() {
       <div className="page-body">
         {/* Selector de período móvil */}
         <div className="card" style={{ marginBottom: 20 }}>
-          <h3 className="card-title">Seleccionar rango de fechas</h3>
-          <p className="card-subtitle">Período general del parqueadero: del 12 al 11 del siguiente mes</p>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 10, marginBottom: 12 }}>
+            <div>
+              <h3 className="card-title" style={{ margin: 0 }}>Rango de Cierre Financiero</h3>
+              <p className="card-subtitle" style={{ margin: '4px 0 0' }}>
+                Ciclo contable del parqueadero: del 12 al 11 de cada mes (fecha de pago de arriendo)
+              </p>
+            </div>
+
+            {/* Accesos rápidos de ciclos contables */}
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm"
+                style={{ fontSize: 12, padding: '4px 10px' }}
+                onClick={() => handleSelectCycle(getPreviousAdminClosingPeriod(startDate))}
+                title="Ver mes contable anterior (12 al 11)"
+              >
+                <ChevronLeft size={14} /> Ciclo anterior
+              </button>
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm"
+                style={{ fontSize: 12, padding: '4px 10px', borderColor: 'rgba(22,199,83,0.4)', color: 'var(--accent-green)' }}
+                onClick={() => handleSelectCycle(getAdminClosingPeriod(new Date()))}
+                title="Volver al ciclo contable actual"
+              >
+                <Calendar size={14} /> Ciclo actual (12 al 11)
+              </button>
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm"
+                style={{ fontSize: 12, padding: '4px 10px' }}
+                onClick={() => handleSelectCycle(getNextAdminClosingPeriod(startDate))}
+                title="Ver siguiente ciclo"
+              >
+                Ciclo siguiente <ChevronRight size={14} />
+              </button>
+            </div>
+          </div>
+
           <div style={{ display: 'flex', gap: 12, alignItems: 'flex-end', flexWrap: 'wrap' }}>
             <div className="form-group" style={{ marginBottom: 0, minWidth: 160 }}>
               <label>Fecha de Inicio</label>
@@ -145,7 +219,7 @@ export default function CierreMes() {
                 onChange={e => setEndDate(e.target.value)}
               />
             </div>
-            <button className="btn btn-primary" onClick={loadCierre} disabled={loading}>
+            <button className="btn btn-primary" onClick={() => loadCierre()} disabled={loading}>
               {loading ? <span className="spinner" style={{ width: 16, height: 16, borderWidth: 2 }} /> : <Calculator size={16} />}
               Calcular
             </button>
@@ -153,26 +227,70 @@ export default function CierreMes() {
               <CheckCircle size={16} /> Cerrar período
             </button>
           </div>
+
+          <div style={{ marginTop: 12, padding: '8px 12px', background: 'rgba(255,255,255,0.03)', borderRadius: 6, fontSize: 12, color: 'var(--text-secondary)' }}>
+            💡 <strong>Criterio contable:</strong> Se contabilizan los ingresos recaudados en este ciclo (del <strong>{startDate}</strong> al <strong>{endDate}</strong>) y los pagos que cubren las mensualidades de este período.
+          </div>
         </div>
 
         {datos && (
           <>
+            {/* Aviso de recibos en revisión */}
+            {datos.recibosPendientes && datos.recibosPendientes.length > 0 && (
+              <div
+                className="card"
+                style={{
+                  marginBottom: 20,
+                  border: '1px solid rgba(234, 179, 8, 0.4)',
+                  background: 'rgba(234, 179, 8, 0.08)',
+                  padding: '14px 18px'
+                }}
+              >
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <AlertCircle size={22} color="var(--accent-yellow)" />
+                    <div>
+                      <p style={{ margin: 0, fontWeight: 700, color: 'var(--accent-yellow)', fontSize: 14 }}>
+                        {datos.recibosPendientes.length} {datos.recibosPendientes.length === 1 ? 'recibo' : 'recibos'} en revisión ({fmt(datos.totalPendientes)})
+                      </p>
+                      <p style={{ margin: '4px 0 0', fontSize: 12, color: 'var(--text-secondary)' }}>
+                        Pendientes de aprobación: {datos.recibosPendientes.map(r => `${r.usuario} (${fmt(r.valor)})`).join(', ')}.
+                      </p>
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, cursor: 'pointer', color: 'var(--text-primary)' }}>
+                      <input
+                        type="checkbox"
+                        checked={incluirEnRevision}
+                        onChange={e => setIncluirEnRevision(e.target.checked)}
+                      />
+                      Incluir en cálculo tentativo
+                    </label>
+                    <Link to="/admin/recibos" className="btn btn-sm btn-ghost" style={{ borderColor: 'var(--accent-yellow)', color: 'var(--accent-yellow)', fontSize: 12 }}>
+                      <Receipt size={14} /> Revisar y Aprobar →
+                    </Link>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* Resumen financiero */}
             <div className="cierre-stats">
               <div className="cierre-stat" style={{ borderTop: '3px solid var(--accent-green)' }}>
                 <TrendingUp size={24} color="var(--accent-green)" />
-                <div className="amount amount-income">{fmt(datos.totalIngresos)}</div>
-                <div className="label">Ingresos ({datos.cantidadRecibos} recibos aprobados)</div>
+                <div className="amount amount-income">{fmt(totalIngresos)}</div>
+                <div className="label">Ingresos ({cantidadRecibos} {cantidadRecibos === 1 ? 'recibo' : 'recibos'})</div>
               </div>
               <div className="cierre-stat" style={{ borderTop: '3px solid var(--accent-red)' }}>
                 <TrendingDown size={24} color="var(--accent-red)" />
-                <div className="amount amount-expense">{fmt(datos.totalGastos)}</div>
+                <div className="amount amount-expense">{fmt(totalGastos)}</div>
                 <div className="label">Gastos ({datos.gastos?.length || 0} items)</div>
               </div>
-              <div className="cierre-stat" style={{ borderTop: `3px solid ${datos.balance >= 0 ? 'var(--accent-cyan)' : 'var(--accent-red)'}` }}>
-                <DollarSign size={24} color={datos.balance >= 0 ? 'var(--accent-cyan)' : 'var(--accent-red)'} />
-                <div className={`amount ${datos.balance >= 0 ? 'amount-balance-pos' : 'amount-balance-neg'}`}>
-                  {datos.balance >= 0 ? '+' : ''}{fmt(datos.balance)}
+              <div className="cierre-stat" style={{ borderTop: `3px solid ${balance >= 0 ? 'var(--accent-cyan)' : 'var(--accent-red)'}` }}>
+                <DollarSign size={24} color={balance >= 0 ? 'var(--accent-cyan)' : 'var(--accent-red)'} />
+                <div className={`amount ${balance >= 0 ? 'amount-balance-pos' : 'amount-balance-neg'}`}>
+                  {balance >= 0 ? '+' : ''}{fmt(balance)}
                 </div>
                 <div className="label">Balance del período</div>
               </div>
@@ -189,7 +307,7 @@ export default function CierreMes() {
                 </div>
 
                 {/* Filtro por método de pago */}
-                {datos.detalleIngresos?.length > 0 && metodosDisponibles.length > 0 && (
+                {ingresosValidados.length > 0 && metodosDisponibles.length > 0 && (
                   <div style={{ marginBottom: 14 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
                       <span style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 700, marginRight: 2 }}>
@@ -201,10 +319,10 @@ export default function CierreMes() {
                         style={{ padding: '3px 9px', fontSize: 11, height: 'auto' }}
                         onClick={() => setFiltroMetodo('todos')}
                       >
-                        Todos ({datos.detalleIngresos.length})
+                        Todos ({ingresosValidados.length})
                       </button>
                       {metodosDisponibles.map(metodo => {
-                        const count = datos.detalleIngresos.filter(d => (d.metodo_pago || 'No especificado') === metodo).length;
+                        const count = ingresosValidados.filter(d => (d.metodo_pago || 'No especificado') === metodo).length;
                         const isSelected = filtroMetodo === metodo;
                         return (
                           <button
@@ -246,12 +364,20 @@ export default function CierreMes() {
                             >
                               {d.metodo_pago || 'No especificado'}
                             </span>
+                            {d.estado === 'en_revision' && (
+                              <span className="badge badge-review" style={{ fontSize: 10 }}>
+                                En revisión
+                              </span>
+                            )}
                           </div>
                           <p style={{ fontSize: 11, color: 'var(--text-secondary)', margin: 0 }}>
-                            {d.placa} · {d.tipo_vehiculo} · Subido: {formatDateLocale(d.fecha)}
+                            {d.placa ? `${d.placa} · ` : ''}{d.tipo_vehiculo} · Subido: {formatDateLocale(d.fecha)}
+                            {d.fecha_inicio ? ` · Ciclo: ${d.fecha_inicio.slice(0, 10)} al ${d.fecha_fin ? d.fecha_fin.slice(0, 10) : ''}` : ''}
                           </p>
                         </div>
-                        <span style={{ fontWeight: 700, color: 'var(--accent-green)', fontSize: 14 }}>{fmt(d.valor)}</span>
+                        <span style={{ fontWeight: 700, color: d.estado === 'en_revision' ? 'var(--accent-yellow)' : 'var(--accent-green)', fontSize: 14 }}>
+                          {fmt(d.valor)}
+                        </span>
                       </div>
                     ))}
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 0', fontWeight: 800, color: 'var(--accent-green)' }}>

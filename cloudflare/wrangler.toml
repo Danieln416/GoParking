@@ -1,0 +1,48 @@
+name = "goparking-api"
+main = "src/worker.js"
+compatibility_date = "2026-09-01"
+
+# ============================================================
+# BASE DE DATOS CLOUDFLARE D1 (SQLITE SERVERLESS)
+# Reemplaza a Google Sheets — 5 GB y 5M lecturas/día GRATIS
+# ============================================================
+[[d1_databases]]
+binding = "DB"
+database_name = "goparking-db"
+database_id = "bdbcdaa5-2c87-4e45-833a-312ca2fa6d6a"
+
+# ============================================================
+# ALMACENAMIENTO DE OBJETOS CLOUDFLARE R2
+# Reemplaza a Google Drive — 10 GB y 0$ costo de descarga GRATIS
+# ============================================================
+[[r2_buckets]]
+binding = "MEDIA_BUCKET"
+bucket_name = "goparking-media"
+
+# ============================================================
+# TAREAS AUTOMÁTICAS PROGRAMADAS (CRON TRIGGERS)
+# Se ejecuta todos los días a las 8:00 AM hora Colombia (13:00 UTC)
+# Revisa moras y envía WhatsApp automáticamente sin intervención
+# ============================================================
+[triggers]
+crons = ["0 13 * * *"]
+
+# ============================================================
+# VARIABLES DE ENTORNO
+# ============================================================
+[vars]
+# Proveedor de WhatsApp: 'meta' (WhatsApp Cloud API Oficial) o 'evolution' (Evolution API Open Source)
+WHATSAPP_PROVIDER = "meta"
+
+# Configuración Meta WhatsApp Cloud API (1.000 conversaciones gratis/mes)
+WHATSAPP_PHONE_NUMBER_ID = ""
+WHATSAPP_ACCESS_TOKEN = ""
+WHATSAPP_TEMPLATE_NAME = "recordatorio_mora"
+
+# Configuración alternativa: Evolution API (WhatsApp con tu propio número vía QR)
+WHATSAPP_EVOLUTION_URL = ""
+WHATSAPP_EVOLUTION_APIKEY = ""
+WHATSAPP_EVOLUTION_INSTANCE = "goparking"
+
+# URL base pública para servir imágenes de R2 (puede ser subdominio de workers.dev o dominio propio)
+MEDIA_BASE_URL = "https://goparking-api.daniram-parking.workers.dev"

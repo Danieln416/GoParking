@@ -1,6 +1,18 @@
 // ============================================================
-// Media Utilities — Manejo y normalización de imágenes de recibos
+// Media Utilities — Manejo y normalización de imágenes de recibos y QR
 // ============================================================
+
+const DEFAULT_API_URL = 'https://goparking-api.daniram-parking.workers.dev';
+const API_URL = (typeof import.meta !== 'undefined' && import.meta.env?.VITE_API_URL) || DEFAULT_API_URL;
+
+function getApiOrigin() {
+  try {
+    const parsed = new URL(API_URL);
+    return parsed.origin;
+  } catch {
+    return DEFAULT_API_URL;
+  }
+}
 
 /**
  * Extrae de forma confiable el ID de archivo de Google Drive
@@ -34,15 +46,28 @@ export function getDriveFileId(value) {
 }
 
 /**
- * Normaliza cualquier URL o ID para renderizado en <img> sin bloqueo de CORP.
- * Utiliza el CDN público de Google (lh3.googleusercontent.com) que permite
- * incrustación cross-origin directa con HTTP 200 sin 'Cross-Origin-Resource-Policy: same-site'.
+ * Normaliza cualquier URL o ID para renderizado en <img> sin bloqueo de CORS.
+ * Soporta Cloudflare R2 (/media/...) y Google Drive (lh3 CDN).
  */
 export function normalizeMediaUrl(value) {
   if (!value || typeof value !== 'string') return '';
   const trimmed = value.trim();
   if (!trimmed || trimmed.startsWith('data:') || trimmed.startsWith('blob:')) return trimmed;
 
+  const origin = getApiOrigin();
+
+  // Rutas relativas de Cloudflare R2
+  if (trimmed.startsWith('/media/')) {
+    return `${origin}${trimmed}`;
+  }
+  if (trimmed.startsWith('media/')) {
+    return `${origin}/${trimmed}`;
+  }
+  if (trimmed.startsWith('recibos/') || trimmed.startsWith('qr/')) {
+    return `${origin}/media/${trimmed}`;
+  }
+
+  // Google Drive
   const fileId = getDriveFileId(trimmed);
   if (fileId) {
     return `https://lh3.googleusercontent.com/d/${fileId}`;
@@ -51,15 +76,17 @@ export function normalizeMediaUrl(value) {
   return trimmed;
 }
 
+export const formatMediaUrl = normalizeMediaUrl;
+
 /**
  * Obtiene la URL óptima para mostrar la imagen de un recibo en una etiqueta <img>.
  * Si useThumbnailFallback es true, usa el endpoint de thumbnail de Google.
  */
 export function getReceiptMediaUrl(receipt = {}, useThumbnailFallback = false) {
-  const fileId = receipt.file_id || getDriveFileId(
-    receipt.url_imagen || receipt.url || receipt.imagen || receipt.archivo_url || receipt.fileUrl
-  );
+  const raw = receipt.url_imagen || receipt.url || receipt.imagen || receipt.archivo_url || receipt.fileUrl;
+  if (!raw) return '';
 
+  const fileId = receipt.file_id || getDriveFileId(raw);
   if (fileId) {
     if (useThumbnailFallback) {
       return `https://drive.google.com/thumbnail?id=${fileId}&sz=w1200`;
@@ -67,21 +94,20 @@ export function getReceiptMediaUrl(receipt = {}, useThumbnailFallback = false) {
     return `https://lh3.googleusercontent.com/d/${fileId}`;
   }
 
-  const value = receipt.url_imagen || receipt.url || receipt.imagen || receipt.archivo_url || receipt.fileUrl;
-  return normalizeMediaUrl(value);
+  return normalizeMediaUrl(raw);
 }
 
 /**
- * Obtiene la URL para abrir el recibo en una pestaña nueva con el visor interactivo de Google Drive.
+ * Obtiene la URL para abrir el recibo en una pestaña nueva.
  */
 export function getReceiptViewerUrl(receipt = {}) {
-  const fileId = receipt.file_id || getDriveFileId(
-    receipt.url_imagen || receipt.url || receipt.imagen || receipt.archivo_url || receipt.fileUrl
-  );
+  const raw = receipt.url_imagen || receipt.url || receipt.imagen || receipt.archivo_url || receipt.fileUrl;
+  if (!raw) return '';
 
+  const fileId = receipt.file_id || getDriveFileId(raw);
   if (fileId) {
     return `https://drive.google.com/file/d/${fileId}/view`;
   }
 
-  return receipt.url_imagen || receipt.url || receipt.imagen || '';
+  return normalizeMediaUrl(raw);
 }

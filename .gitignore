@@ -22,3 +22,8 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Cloudflare & Wrangler local data
+.wrangler/
+**/.wrangler/
+cloudflare/migrated_data/images/

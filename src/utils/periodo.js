@@ -63,7 +63,7 @@ function addMonthsKeepingDay(date, months, targetDay) {
  * Obtiene el período contable del administrador (el arriendo se paga el 12 de cada mes).
  * Ciclo: 12 de un mes al 11 del mes siguiente.
  */
-export function getAdminClosingPeriod(referenceDate = new Date()) {
+export function getAdminClosingPeriod(referenceDate = new Date(), offsetMonths = 0) {
   const ref = typeof referenceDate === 'string' ? parseDate(referenceDate) : referenceDate;
   const d = ref || new Date();
   const year = d.getFullYear();
@@ -82,6 +82,13 @@ export function getAdminClosingPeriod(referenceDate = new Date()) {
     }
   }
 
+  // Aplicar desplazamiento de meses (ej. -1 para ciclo anterior, +1 para ciclo siguiente)
+  if (offsetMonths !== 0) {
+    const shifted = new Date(startYear, startMonth + offsetMonths, 12);
+    startYear = shifted.getFullYear();
+    startMonth = shifted.getMonth();
+  }
+
   const startDate = new Date(startYear, startMonth, 12);
   const endDate = new Date(startYear, startMonth + 1, 11);
 
@@ -89,6 +96,14 @@ export function getAdminClosingPeriod(referenceDate = new Date()) {
     startDate: formatDateInput(startDate),
     endDate: formatDateInput(endDate)
   };
+}
+
+export function getPreviousAdminClosingPeriod(referenceDate = new Date()) {
+  return getAdminClosingPeriod(referenceDate, -1);
+}
+
+export function getNextAdminClosingPeriod(referenceDate = new Date()) {
+  return getAdminClosingPeriod(referenceDate, 1);
 }
 
 // Mantener compatibilidad con llamadas existentes
@@ -99,6 +114,7 @@ export function calcularInicioPeriodo(fecha = new Date()) {
 export function calcularFinPeriodo(fecha = new Date()) {
   return getAdminClosingPeriod(fecha).endDate;
 }
+
 
 // ============================================================
 // 2. CICLO INDIVIDUAL DE COBRO DEL USUARIO (Fecha de inicio y corte)
@@ -115,18 +131,61 @@ export function getUserBillingInfo(userStartDate, referenceDate = new Date(), us
   const start = parseDate(userStartDate) || new Date();
   const billingDay = start.getDate();
 
-  // Determinar el inicio del período mensual activo
-  let periodStart = addMonthsKeepingDay(today, 0, billingDay);
-  if (today < periodStart) {
-    periodStart = addMonthsKeepingDay(today, -1, billingDay);
+  const msPerDay = 1000 * 60 * 60 * 24;
+  const todayZero = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+
+  // 1. Determinar corte del mes actual o más reciente
+  let candidateCutoff = addMonthsKeepingDay(todayZero, 0, billingDay);
+  if (todayZero < candidateCutoff) {
+    candidateCutoff = addMonthsKeepingDay(todayZero, -1, billingDay);
   }
 
-  // Si el período calculado es previo a la fecha de inicio del usuario, usar la fecha de inicio
-  if (periodStart < start) {
-    periodStart = new Date(start.getFullYear(), start.getMonth(), start.getDate());
+  // Si el usuario comenzó antes de candidateCutoff, verificar si pagó el ciclo que concluyó en candidateCutoff
+  const startZero = new Date(start.getFullYear(), start.getMonth(), start.getDate());
+  const prevPeriodStart = addMonthsKeepingDay(candidateCutoff, -1, billingDay);
+  const prevPeriodEnd = new Date(candidateCutoff.getFullYear(), candidateCutoff.getMonth(), candidateCutoff.getDate() - 1);
+  const hadPreviousCycle = startZero <= prevPeriodStart;
+
+  if (hadPreviousCycle) {
+    const prevStartStr = formatDateInput(prevPeriodStart);
+    const prevCutoffStr = formatDateInput(candidateCutoff);
+    const prevReceipts = (userReceipts || []).filter(r => {
+      if (r.fecha_inicio && r.fecha_inicio.slice(0, 10) === prevStartStr) return true;
+      if (r.fecha_subida) {
+        const u = r.fecha_subida.slice(0, 10);
+        return u >= prevStartStr && u <= prevCutoffStr;
+      }
+      return false;
+    });
+
+    const prevApproved = prevReceipts.find(r => r.estado === 'aprobado');
+    const prevInReview = prevReceipts.find(r => r.estado === 'en_revision');
+
+    if (!prevApproved && !prevInReview) {
+      const diffDays = Math.round((candidateCutoff - todayZero) / msPerDay);
+      const diasVencido = Math.abs(diffDays);
+      return {
+        billingDay,
+        periodStart: prevStartStr,
+        periodEnd: formatDateInput(prevPeriodEnd),
+        cutoffDate: prevCutoffStr,
+        status: 'vencido',
+        badge: diffDays === 0 ? 'Corte hoy' : 'Pago vencido',
+        message: diffDays === 0
+          ? `Hoy es tu fecha límite de pago (${formatDateLabel(candidateCutoff)}). Sube tu comprobante.`
+          : `Tu pago venció hace ${diasVencido} ${diasVencido === 1 ? 'día' : 'días'} (el ${formatDateLabel(candidateCutoff)}). Por favor sube tu comprobante.`,
+        diffDays,
+        receipt: null,
+        isPreviousPeriodOverdue: true
+      };
+    }
   }
 
-  // Fin del período: 1 día antes del corte del mes siguiente
+  // 2. Período actual en curso
+  let periodStart = candidateCutoff;
+  if (periodStart < startZero) {
+    periodStart = startZero;
+  }
   const nextCutoff = addMonthsKeepingDay(periodStart, 1, billingDay);
   const periodEnd = new Date(nextCutoff.getFullYear(), nextCutoff.getMonth(), nextCutoff.getDate() - 1);
 
@@ -153,11 +212,7 @@ export function getUserBillingInfo(userStartDate, referenceDate = new Date(), us
   const inReview = periodReceipts.find(r => r.estado === 'en_revision');
   const activeReceipt = approved || inReview || periodReceipts[0] || null;
 
-  // Cálculo de días restantes o vencimiento
-  const msPerDay = 1000 * 60 * 60 * 24;
-  const todayZero = new Date(today.getFullYear(), today.getMonth(), today.getDate());
-  const cutoffZero = new Date(nextCutoff.getFullYear(), nextCutoff.getMonth(), nextCutoff.getDate());
-  const diffDays = Math.round((cutoffZero - todayZero) / msPerDay);
+  const diffDays = Math.round((nextCutoff - todayZero) / msPerDay);
 
   let status = 'pendiente'; // 'al_dia' | 'en_revision' | 'pendiente' | 'vencido'
   let message = '';
@@ -195,9 +250,73 @@ export function getUserBillingInfo(userStartDate, referenceDate = new Date(), us
     badge,
     message,
     diffDays,
-    receipt: activeReceipt
+    receipt: activeReceipt,
+    isPreviousPeriodOverdue: false
   };
 }
+
+/**
+ * Genera las opciones estructuradas de período de pago para el usuario.
+ */
+export function getUserPeriodOptions(userStartDate, referenceDate = new Date(), userReceipts = []) {
+  const billing = getUserBillingInfo(userStartDate, referenceDate, userReceipts);
+  const start = parseDate(userStartDate) || new Date();
+  const billingDay = start.getDate();
+
+  const currentStart = parseDate(billing.periodStart) || new Date();
+  
+  // Mes anterior
+  const prevStart = addMonthsKeepingDay(currentStart, -1, billingDay);
+  const prevEnd = new Date(currentStart.getFullYear(), currentStart.getMonth(), currentStart.getDate() - 1);
+  
+  // Mes siguiente (adelanto)
+  const nextStart = addMonthsKeepingDay(currentStart, 1, billingDay);
+  const nextCutoff = addMonthsKeepingDay(nextStart, 1, billingDay);
+  const nextEnd = new Date(nextCutoff.getFullYear(), nextCutoff.getMonth(), nextCutoff.getDate() - 1);
+
+  const prevOption = {
+    id: 'prev',
+    label: 'Mes anterior',
+    sublabel: 'Comprobante retroactivo o pendiente',
+    fechaInicio: formatDateInput(prevStart),
+    fechaFin: formatDateInput(prevEnd),
+    periodText: `Del ${formatDateLabel(prevStart)} al ${formatDateLabel(prevEnd)}`,
+    cutoffText: `Corte: ${formatDateLabel(currentStart)}`
+  };
+
+  const currentOption = {
+    id: 'current',
+    label: billing.isPreviousPeriodOverdue ? 'Mes vencido pendiente' : 'Mes actual',
+    sublabel: `Corte mensual: Día ${billingDay} de cada mes`,
+    fechaInicio: billing.periodStart,
+    fechaFin: billing.periodEnd,
+    periodText: `Del ${formatDateLabel(billing.periodStart)} al ${formatDateLabel(billing.periodEnd)}`,
+    cutoffText: `Corte: ${formatDateLabel(billing.cutoffDate)}`,
+    isRecommended: billing.status !== 'al_dia'
+  };
+
+  const nextOption = {
+    id: 'next',
+    label: 'Mes siguiente (Adelantado)',
+    sublabel: 'Pagar anticipadamente el próximo ciclo',
+    fechaInicio: formatDateInput(nextStart),
+    fechaFin: formatDateInput(nextEnd),
+    periodText: `Del ${formatDateLabel(nextStart)} al ${formatDateLabel(nextEnd)}`,
+    cutoffText: `Corte: ${formatDateLabel(nextCutoff)}`,
+    isRecommended: billing.status === 'al_dia'
+  };
+
+  return {
+    billing,
+    options: [
+      currentOption,
+      nextOption,
+      prevOption
+    ],
+    defaultOptionId: (billing.status === 'al_dia') ? 'next' : 'current'
+  };
+}
+
 
 export function calcularInicioPeriodoUsuario(fecha = new Date(), fechaInicioUsuario) {
   const info = getUserBillingInfo(fechaInicioUsuario, fecha);

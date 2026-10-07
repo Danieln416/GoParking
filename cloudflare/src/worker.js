@@ -778,21 +778,75 @@ export default {
         const idsPagados = new Set(recibos.map(r => r.usuario_id).filter(Boolean));
         const correosPagados = new Set(recibos.map(r => String(r.usuario_correo || '').toLowerCase()).filter(Boolean));
 
+        const sDate = parseDate(startDate);
+        const eDate = parseDate(endDate);
+        const now = new Date();
+        const todayZero = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+
         const usuariosPendientes = (usuariosActivos || []).filter(u => {
           if (idsPagados.has(u.id)) return false;
           if (u.correo && correosPagados.has(String(u.correo).toLowerCase())) return false;
           return true;
-        }).map(u => ({
-          id: u.id,
-          nombre: u.nombre,
-          correo: u.correo,
-          celular: u.celular,
-          telefono: u.telefono,
-          placa: u.tipo_vehiculo === 'Carro' ? (u.placa_carro || '') : (u.placa_moto || u.placa_carro || ''),
-          tipo_vehiculo: u.tipo_vehiculo,
-          valor_tarifa: Number(u.valor_tarifa || 0),
-          fecha_inicio: u.fecha_inicio
-        }));
+        }).map(u => {
+          const uDate = parseDate(u.fecha_inicio) || sDate;
+          const billingDay = uDate ? uDate.getDate() : 12;
+          const cycleStartDay = sDate ? sDate.getDate() : 12;
+
+          let dueDate;
+          if (sDate && eDate) {
+            if (billingDay >= cycleStartDay) {
+              dueDate = new Date(sDate.getFullYear(), sDate.getMonth(), billingDay);
+            } else {
+              dueDate = new Date(eDate.getFullYear(), eDate.getMonth(), billingDay);
+            }
+          } else {
+            dueDate = uDate;
+          }
+
+          const diffDays = Math.round((todayZero - dueDate) / 86400000);
+          const isOverdue = diffDays > 0;
+          const isToday = diffDays === 0;
+
+          let badgeText = '';
+          let estadoMora = 'pendiente';
+
+          if (isToday) {
+            badgeText = `Corte hoy (día ${billingDay})`;
+            estadoMora = 'corte_hoy';
+          } else if (isOverdue) {
+            badgeText = `Vencido hace ${diffDays}d (día ${billingDay})`;
+            estadoMora = 'vencido';
+          } else {
+            badgeText = `Vence en ${Math.abs(diffDays)}d (día ${billingDay})`;
+            estadoMora = 'pendiente';
+          }
+
+          return {
+            id: u.id,
+            nombre: u.nombre,
+            correo: u.correo,
+            celular: u.celular,
+            telefono: u.telefono,
+            placa: u.tipo_vehiculo === 'Carro' ? (u.placa_carro || '') : (u.placa_moto || u.placa_carro || ''),
+            tipo_vehiculo: u.tipo_vehiculo,
+            valor_tarifa: Number(u.valor_tarifa || 0),
+            fecha_inicio: u.fecha_inicio,
+            billingDay,
+            dueDate: formatDate(dueDate),
+            diffDays,
+            diasMora: Math.max(0, diffDays),
+            isOverdue,
+            isToday,
+            estadoMora,
+            badgeText
+          };
+        }).sort((a, b) => {
+          if (a.isOverdue && !b.isOverdue) return -1;
+          if (!a.isOverdue && b.isOverdue) return 1;
+          if (a.isToday && !b.isToday) return -1;
+          if (!a.isToday && b.isToday) return 1;
+          return b.diffDays - a.diffDays;
+        });
 
         const totalEsperado = (usuariosActivos || []).reduce((sum, u) => sum + Number(u.valor_tarifa || 0), 0);
         const totalPorCobrar = usuariosPendientes.reduce((sum, u) => sum + u.valor_tarifa, 0);

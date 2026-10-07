@@ -28,7 +28,8 @@ import {
   getAdminClosingPeriod,
   getPreviousAdminClosingPeriod,
   getNextAdminClosingPeriod,
-  formatDateLabel
+  formatDateLabel,
+  parseDate
 } from '../../utils/periodo.js';
 import { getReceiptMediaUrl, getReceiptViewerUrl } from '../../utils/media.js';
 
@@ -167,23 +168,86 @@ export default function RecibosAdmin() {
     }
   }
 
+  function getUserMoraInfo(user) {
+    if (user.badgeText !== undefined && user.diffDays !== undefined) {
+      return {
+        billingDay: user.billingDay,
+        dueDate: user.dueDate,
+        diffDays: user.diffDays,
+        diasMora: user.diasMora,
+        isOverdue: user.isOverdue,
+        isToday: user.isToday,
+        text: user.badgeText
+      };
+    }
+
+    const sDate = parseDate(startDate) || new Date();
+    const eDate = parseDate(endDate) || new Date();
+    const uDate = parseDate(user.fecha_inicio) || sDate;
+    const billingDay = uDate.getDate();
+    const cycleStartDay = sDate.getDate();
+
+    let dueDate;
+    if (billingDay >= cycleStartDay) {
+      dueDate = new Date(sDate.getFullYear(), sDate.getMonth(), billingDay);
+    } else {
+      dueDate = new Date(eDate.getFullYear(), eDate.getMonth(), billingDay);
+    }
+
+    const today = new Date();
+    const todayZero = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+    const diffDays = Math.round((todayZero - dueDate) / 86400000);
+    const isOverdue = diffDays > 0;
+    const isToday = diffDays === 0;
+
+    let text = '';
+    if (isToday) {
+      text = `Corte hoy (día ${billingDay})`;
+    } else if (isOverdue) {
+      text = `Vencido hace ${diffDays}d (día ${billingDay})`;
+    } else {
+      text = `Vence en ${Math.abs(diffDays)}d (día ${billingDay})`;
+    }
+
+    return {
+      billingDay,
+      dueDate: formatDateLabel(dueDate),
+      diffDays,
+      diasMora: Math.max(0, diffDays),
+      isOverdue,
+      isToday,
+      text
+    };
+  }
+
   function buildWhatsAppLink(user) {
     let num = String(user.celular || user.telefono || '').replace(/\D/g, '');
     if (num.length === 10 && num.startsWith('3')) num = '57' + num;
     const primerNombre = (user.nombre || '').split(' ')[0];
     const valorFmt = `$${Number(user.valor_tarifa || 0).toLocaleString('es-CO')}`;
-    const corteDia = user.fecha_inicio ? new Date(user.fecha_inicio).getDate() : null;
+    const moraInfo = getUserMoraInfo(user);
+    const corteTxt = moraInfo.dueDate ? formatDateLabel(moraInfo.dueDate) : `día ${moraInfo.billingDay}`;
 
-    const periodoTxt = startDate && endDate
-      ? `del ${startDate} al ${endDate}`
-      : 'del ciclo actual';
-
-    const msg = `Hola ${primerNombre} 👋, te saludamos del Parqueadero GoParking 🚗.\n\n` +
-      `Te recordamos amablemente tu mensualidad correspondiente al ciclo ${periodoTxt}` +
-      (corteDia ? ` (Día de corte: ${corteDia} de cada mes)` : '') + `.\n\n` +
-      `💰 *Valor a cancelar:* ${valorFmt}\n\n` +
-      `📌 Por favor sube tu comprobante en la aplicación web una vez realizado el pago para mantener tu registro al día.\n\n` +
-      `¡Muchas gracias por tu puntualidad!`;
+    let msg = '';
+    if (moraInfo.isToday) {
+      msg = `Hola ${primerNombre} 👋, te saludamos del Parqueadero GoParking 🚗.\n\n` +
+        `Te recordamos amablemente que *hoy vence tu mensualidad* (Fecha de corte: ${corteTxt}).\n\n` +
+        `💰 *Valor a cancelar:* ${valorFmt}\n\n` +
+        `📌 Por favor sube tu comprobante en la aplicación web una vez realizado el pago para mantener tu registro al día.\n\n` +
+        `¡Muchas gracias por tu puntualidad!`;
+    } else if (moraInfo.isOverdue) {
+      msg = `Hola ${primerNombre} 👋, te saludamos del Parqueadero GoParking 🚗.\n\n` +
+        `Te recordamos amablemente que tu mensualidad presenta *${moraInfo.diasMora} día(s) de vencimiento* (Fecha de corte: ${corteTxt}).\n\n` +
+        `💰 *Valor a cancelar:* ${valorFmt}\n\n` +
+        `📌 Por favor sube tu comprobante en la aplicación web una vez realizado el pago para mantener tu registro al día.\n\n` +
+        `¡Muchas gracias por tu puntualidad!`;
+    } else {
+      msg = `Hola ${primerNombre} 👋, te saludamos del Parqueadero GoParking 🚗.\n\n` +
+        `Te recordamos amablemente tu mensualidad correspondiente al ciclo del ${startDate} al ${endDate} (Fecha límite de pago: ${corteTxt}).\n\n` +
+        `💰 *Valor a cancelar:* ${valorFmt}\n\n` +
+        `📌 Por favor sube tu comprobante en la aplicación web una vez realizado el pago para mantener tu registro al día.\n\n` +
+        `¡Muchas gracias por tu puntualidad!`;
+    }
 
     return `https://wa.me/${num}?text=${encodeURIComponent(msg)}`;
   }
@@ -225,21 +289,6 @@ export default function RecibosAdmin() {
   }, [cierreData?.usuariosPendientes, searchMoroso]);
 
   const totalPorCobrarUnpaid = cierreData?.totalPorCobrar || 0;
-
-  function getUserBadge(user) {
-    if (!user.fecha_inicio) return { text: 'Cobro pendiente', isOverdue: false };
-    const billingDay = new Date(user.fecha_inicio).getDate();
-    const today = new Date();
-    const todayDay = today.getDate();
-
-    if (todayDay === billingDay) {
-      return { text: 'Corte hoy', isOverdue: true };
-    }
-    if (todayDay > billingDay) {
-      return { text: `Vencido (día ${billingDay})`, isOverdue: true };
-    }
-    return { text: `Cobro pendiente (corte día ${billingDay})`, isOverdue: false };
-  }
 
   return (
     <div className="page-enter">
@@ -380,7 +429,7 @@ export default function RecibosAdmin() {
             ) : unpaidUsers.length ? (
               <div style={{ display: 'grid', gap: 8, maxHeight: 350, overflowY: 'auto', marginTop: 10 }}>
                 {unpaidUsers.map(user => {
-                  const badgeInfo = getUserBadge(user);
+                  const moraInfo = getUserMoraInfo(user);
                   return (
                     <div
                       key={user.id}
@@ -391,7 +440,7 @@ export default function RecibosAdmin() {
                         padding: '8px 12px',
                         borderRadius: 8,
                         background: 'var(--bg-secondary)',
-                        border: badgeInfo.isOverdue ? '1px solid rgba(239, 68, 68, 0.35)' : '1px solid var(--border)'
+                        border: (moraInfo.isOverdue || moraInfo.isToday) ? '1px solid rgba(239, 68, 68, 0.45)' : '1px solid var(--border)'
                       }}
                     >
                       <div>
@@ -402,18 +451,16 @@ export default function RecibosAdmin() {
                         <span style={{ color: 'var(--accent-yellow)', marginLeft: 8, fontSize: 12, fontWeight: 700 }}>
                           ${Number(user.valor_tarifa || 0).toLocaleString('es-CO')}
                         </span>
-                        {user.fecha_inicio && (
-                          <span style={{ color: 'var(--text-secondary)', marginLeft: 8, fontSize: 11 }}>
-                            · Corte día {new Date(user.fecha_inicio).getDate()} de cada mes
-                          </span>
-                        )}
+                        <span style={{ color: 'var(--text-secondary)', marginLeft: 8, fontSize: 11 }}>
+                          · Corte día {moraInfo.billingDay} de cada mes
+                        </span>
                       </div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                         <span
-                          className={`badge ${badgeInfo.isOverdue ? 'badge-rejected' : 'badge-review'}`}
+                          className={`badge ${moraInfo.isOverdue || moraInfo.isToday ? 'badge-rejected' : 'badge-review'}`}
                           style={{ fontSize: 11 }}
                         >
-                          {badgeInfo.text}
+                          {moraInfo.text}
                         </span>
                         {(user.celular || user.telefono) && (
                           <a

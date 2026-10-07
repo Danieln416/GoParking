@@ -464,11 +464,28 @@ export default function CierreMes() {
                     if (num.length === 10 && num.startsWith('3')) num = '57' + num;
                     const primerNombre = (u.nombre || '').split(' ')[0];
                     const valorFmt = fmt(u.valor_tarifa);
-                    const msg = `Hola ${primerNombre} 👋, te saludamos del Parqueadero GoParking 🚗.\n\n` +
-                      `Te recordamos amablemente tu mensualidad correspondiente al ciclo actual.\n\n` +
-                      `💰 *Valor a cancelar:* ${valorFmt}\n\n` +
-                      `📌 Por favor sube tu comprobante en la aplicación web una vez realizado el pago para mantener tu registro al día.\n\n` +
-                      `¡Muchas gracias por tu puntualidad!`;
+                    
+                    let msg = '';
+                    if (u.isToday) {
+                      msg = `Hola ${primerNombre} 👋, te saludamos del Parqueadero GoParking 🚗.\n\n` +
+                        `Te recordamos amablemente que *hoy vence tu mensualidad* (Fecha de corte: ${u.dueDate || 'hoy'}).\n\n` +
+                        `💰 *Valor a cancelar:* ${valorFmt}\n\n` +
+                        `📌 Por favor sube tu comprobante en la aplicación web una vez realizado el pago para mantener tu registro al día.\n\n` +
+                        `¡Muchas gracias por tu puntualidad!`;
+                    } else if (u.isOverdue) {
+                      msg = `Hola ${primerNombre} 👋, te saludamos del Parqueadero GoParking 🚗.\n\n` +
+                        `Te recordamos amablemente que tu mensualidad presenta *${u.diasMora} día(s) de vencimiento* (Fecha de corte: ${u.dueDate}).\n\n` +
+                        `💰 *Valor a cancelar:* ${valorFmt}\n\n` +
+                        `📌 Por favor sube tu comprobante en la aplicación web una vez realizado el pago para mantener tu registro al día.\n\n` +
+                        `¡Muchas gracias por tu puntualidad!`;
+                    } else {
+                      msg = `Hola ${primerNombre} 👋, te saludamos del Parqueadero GoParking 🚗.\n\n` +
+                        `Te recordamos amablemente tu mensualidad correspondiente al ciclo del ${datos.startDate} al ${datos.endDate} (Fecha límite de pago: ${u.dueDate}).\n\n` +
+                        `💰 *Valor a cancelar:* ${valorFmt}\n\n` +
+                        `📌 Por favor sube tu comprobante en la aplicación web una vez realizado el pago para mantener tu registro al día.\n\n` +
+                        `¡Muchas gracias por tu puntualidad!`;
+                    }
+
                     const waLink = num ? `https://wa.me/${num}?text=${encodeURIComponent(msg)}` : null;
 
                     return (
@@ -478,7 +495,7 @@ export default function CierreMes() {
                           padding: '12px 14px',
                           borderRadius: 8,
                           background: 'var(--bg-secondary)',
-                          border: '1px solid var(--border)',
+                          border: (u.isOverdue || u.isToday) ? '1px solid rgba(239, 68, 68, 0.45)' : '1px solid var(--border)',
                           display: 'flex',
                           justifyContent: 'space-between',
                           alignItems: 'center',
@@ -486,10 +503,20 @@ export default function CierreMes() {
                         }}
                       >
                         <div>
-                          <div style={{ fontWeight: 600, fontSize: 13 }}>{u.nombre}</div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <span style={{ fontWeight: 600, fontSize: 13 }}>{u.nombre}</span>
+                            {u.badgeText && (
+                              <span
+                                className={`badge ${u.isOverdue || u.isToday ? 'badge-rejected' : 'badge-review'}`}
+                                style={{ fontSize: 10 }}
+                              >
+                                {u.badgeText}
+                              </span>
+                            )}
+                          </div>
                           <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 2 }}>
                             {u.placa ? `${u.placa} · ` : ''}{u.tipo_vehiculo || 'Mensualidad'}
-                            {u.fecha_inicio ? ` · Corte día ${new Date(u.fecha_inicio).getDate()}` : ''}
+                            {u.billingDay ? ` · Corte día ${u.billingDay} de cada mes` : ''}
                           </div>
                           <div style={{ fontWeight: 700, fontSize: 13, color: 'var(--accent-yellow)', marginTop: 4 }}>
                             {fmt(u.valor_tarifa)}

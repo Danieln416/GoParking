@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { Calculator, Plus, Trash2, TrendingUp, TrendingDown, DollarSign, CheckCircle, AlertCircle, X, Download, ChevronLeft, ChevronRight, Calendar, Receipt } from 'lucide-react';
+import { Calculator, Plus, Trash2, TrendingUp, TrendingDown, DollarSign, CheckCircle, AlertCircle, X, Download, ChevronLeft, ChevronRight, Calendar, Receipt, Users, MessageSquare } from 'lucide-react';
 import { apiGetCierreMes, apiAgregarGasto, apiEliminarGasto, apiCerrarMes } from '../../api.js';
 import {
   calcularFinPeriodo,
@@ -280,7 +280,17 @@ export default function CierreMes() {
               <div className="cierre-stat" style={{ borderTop: '3px solid var(--accent-green)' }}>
                 <TrendingUp size={24} color="var(--accent-green)" />
                 <div className="amount amount-income">{fmt(totalIngresos)}</div>
-                <div className="label">Ingresos ({cantidadRecibos} {cantidadRecibos === 1 ? 'recibo' : 'recibos'})</div>
+                <div className="label">Ingresos Recaudados ({cantidadRecibos} {cantidadRecibos === 1 ? 'recibo' : 'recibos'})</div>
+              </div>
+              <div className="cierre-stat" style={{ borderTop: '3px solid var(--accent-yellow)' }}>
+                <Users size={24} color="var(--accent-yellow)" />
+                <div className="amount" style={{ color: 'var(--accent-yellow)' }}>{fmt(datos.totalPorCobrar || 0)}</div>
+                <div className="label">Por Cobrar ({datos.cantidadUsuariosPendientes || (datos.usuariosPendientes?.length || 0)} clientes)</div>
+              </div>
+              <div className="cierre-stat" style={{ borderTop: '3px solid var(--accent-cyan)' }}>
+                <Calculator size={24} color="var(--accent-cyan)" />
+                <div className="amount" style={{ color: 'var(--accent-cyan)' }}>{fmt(datos.totalEsperado || 0)}</div>
+                <div className="label">Meta Mensual Esperada</div>
               </div>
               <div className="cierre-stat" style={{ borderTop: '3px solid var(--accent-red)' }}>
                 <TrendingDown size={24} color="var(--accent-red)" />
@@ -292,7 +302,7 @@ export default function CierreMes() {
                 <div className={`amount ${balance >= 0 ? 'amount-balance-pos' : 'amount-balance-neg'}`}>
                   {balance >= 0 ? '+' : ''}{fmt(balance)}
                 </div>
-                <div className="label">Balance del período</div>
+                <div className="label">Balance de Caja</div>
               </div>
             </div>
 
@@ -429,6 +439,90 @@ export default function CierreMes() {
                 )}
               </div>
             </div>
+
+            {/* Clientes pendientes de pago del período */}
+            {datos.usuariosPendientes && datos.usuariosPendientes.length > 0 && (
+              <div className="card" style={{ marginTop: 20 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14, flexWrap: 'wrap', gap: 10 }}>
+                  <div>
+                    <h3 className="card-title" style={{ margin: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <Users size={18} color="var(--accent-yellow)" />
+                      Clientes Pendientes de Pago en este Ciclo ({datos.usuariosPendientes.length})
+                    </h3>
+                    <p style={{ margin: '4px 0 0', fontSize: 12, color: 'var(--text-secondary)' }}>
+                      Clientes activos que aún no han registrado su pago entre {datos.startDate} y {datos.endDate}. Cartera por recaudar: <strong style={{ color: 'var(--accent-yellow)' }}>{fmt(datos.totalPorCobrar)}</strong>
+                    </p>
+                  </div>
+                  <Link to="/admin/recibos" className="btn btn-sm btn-ghost" style={{ fontSize: 12 }}>
+                    <Receipt size={14} /> Ir a Recibos →
+                  </Link>
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: 10 }}>
+                  {datos.usuariosPendientes.map(u => {
+                    let num = String(u.celular || u.telefono || '').replace(/\D/g, '');
+                    if (num.length === 10 && num.startsWith('3')) num = '57' + num;
+                    const primerNombre = (u.nombre || '').split(' ')[0];
+                    const valorFmt = fmt(u.valor_tarifa);
+                    const msg = `Hola ${primerNombre} 👋, te saludamos del Parqueadero GoParking 🚗.\n\n` +
+                      `Te recordamos amablemente tu mensualidad correspondiente al ciclo actual.\n\n` +
+                      `💰 *Valor a cancelar:* ${valorFmt}\n\n` +
+                      `📌 Por favor sube tu comprobante en la aplicación web una vez realizado el pago para mantener tu registro al día.\n\n` +
+                      `¡Muchas gracias por tu puntualidad!`;
+                    const waLink = num ? `https://wa.me/${num}?text=${encodeURIComponent(msg)}` : null;
+
+                    return (
+                      <div
+                        key={u.id}
+                        style={{
+                          padding: '12px 14px',
+                          borderRadius: 8,
+                          background: 'var(--bg-secondary)',
+                          border: '1px solid var(--border)',
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          alignItems: 'center',
+                          gap: 10
+                        }}
+                      >
+                        <div>
+                          <div style={{ fontWeight: 600, fontSize: 13 }}>{u.nombre}</div>
+                          <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 2 }}>
+                            {u.placa ? `${u.placa} · ` : ''}{u.tipo_vehiculo || 'Mensualidad'}
+                            {u.fecha_inicio ? ` · Corte día ${new Date(u.fecha_inicio).getDate()}` : ''}
+                          </div>
+                          <div style={{ fontWeight: 700, fontSize: 13, color: 'var(--accent-yellow)', marginTop: 4 }}>
+                            {fmt(u.valor_tarifa)}
+                          </div>
+                        </div>
+                        {waLink && (
+                          <a
+                            href={waLink}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="btn btn-sm"
+                            style={{
+                              background: 'rgba(37, 211, 102, 0.15)',
+                              color: '#25D366',
+                              border: '1px solid rgba(37, 211, 102, 0.35)',
+                              padding: '5px 10px',
+                              fontSize: 11,
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: 5,
+                              textDecoration: 'none',
+                              flexShrink: 0
+                            }}
+                          >
+                            <MessageSquare size={13} /> Cobrar
+                          </a>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
           </>
         )}
       </div>

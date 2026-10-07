@@ -667,7 +667,7 @@ tbody tr:hover { background: var(--bg-card-hover); }
 
 /* ===================== CIERRE MES ===================== */
 .cierre-stats {
-  display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-bottom: 24px;
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 16px; margin-bottom: 24px;
 }
 
 .cierre-stat {

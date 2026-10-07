@@ -730,21 +730,26 @@ export default {
         const endIso = endDate + 'T23:59:59';
         const baseOrigin = env.MEDIA_BASE_URL || url.origin;
 
-        // Un recibo pertenece al ciclo si:
-        // 1. Fue subido/recaudado durante este ciclo contable (fecha_subida entre startIso y endIso)
-        // 2. O su período cubierto inicia en este ciclo contable (fecha_inicio entre startDate y endDate)
+        // Un recibo pertenece al ciclo si fue subido/recaudado durante este ciclo contable (fecha_subida entre startIso y endIso)
         const { results: rawRecibos } = await env.DB.prepare(`
           SELECT r.*, u.valor_tarifa, u.placa_carro, u.placa_moto, u.tipo_vehiculo
           FROM recibos r
           LEFT JOIN usuarios u ON r.usuario_id = u.id
-          WHERE (r.fecha_subida >= ? AND r.fecha_subida <= ?)
-             OR (substr(r.fecha_inicio, 1, 10) >= ? AND substr(r.fecha_inicio, 1, 10) <= ?)
+          WHERE r.fecha_subida >= ? AND r.fecha_subida <= ?
           ORDER BY r.fecha_subida DESC
-        `).bind(startIso, endIso, startDate, endDate).all();
+        `).bind(startIso, endIso).all();
 
         const { results: gastos } = await env.DB.prepare(`
           SELECT * FROM gastos WHERE fecha >= ? AND fecha <= ? ORDER BY fecha DESC
         `).bind(startDate, endDate).all();
+
+        // Obtener clientes activos (excluyendo admin y usuario de prueba) para balance de cartera
+        const { results: usuariosActivos } = await env.DB.prepare(`
+          SELECT id, nombre, cedula, correo, telefono, celular, placa_carro, placa_moto, tipo_vehiculo, valor_tarifa, fecha_inicio
+          FROM usuarios
+          WHERE rol != 'admin' AND activo = 1 AND lower(nombre) != 'prueba'
+          ORDER BY nombre ASC
+        `).all();
 
         // Deduplicar recibos por id
         const uniqueMap = new Map();
@@ -761,6 +766,7 @@ export default {
           return {
             recibo_id: r.id,
             id: r.id,
+            usuario_id: r.usuario_id,
             usuario: r.usuario_nombre,
             correo: r.usuario_correo,
             placa: r.tipo_vehiculo === 'Carro' ? (r.placa_carro || '') : (r.placa_moto || r.placa_carro || ''),
@@ -786,6 +792,29 @@ export default {
         const totalPendientes = recibosPendientes.reduce((sum, d) => sum + d.valor, 0);
         const totalGastos = gastos.reduce((sum, g) => sum + Number(g.valor || 0), 0);
 
+        // Identificar qué usuarios activos ya pagaron en este período
+        const idsPagados = new Set(recibos.map(r => r.usuario_id).filter(Boolean));
+        const correosPagados = new Set(recibos.map(r => String(r.usuario_correo || '').toLowerCase()).filter(Boolean));
+
+        const usuariosPendientes = (usuariosActivos || []).filter(u => {
+          if (idsPagados.has(u.id)) return false;
+          if (u.correo && correosPagados.has(String(u.correo).toLowerCase())) return false;
+          return true;
+        }).map(u => ({
+          id: u.id,
+          nombre: u.nombre,
+          correo: u.correo,
+          celular: u.celular,
+          telefono: u.telefono,
+          placa: u.tipo_vehiculo === 'Carro' ? (u.placa_carro || '') : (u.placa_moto || u.placa_carro || ''),
+          tipo_vehiculo: u.tipo_vehiculo,
+          valor_tarifa: Number(u.valor_tarifa || 0),
+          fecha_inicio: u.fecha_inicio
+        }));
+
+        const totalEsperado = (usuariosActivos || []).reduce((sum, u) => sum + Number(u.valor_tarifa || 0), 0);
+        const totalPorCobrar = usuariosPendientes.reduce((sum, u) => sum + u.valor_tarifa, 0);
+
         const { results: cierres } = await env.DB.prepare(
           "SELECT id FROM cierres WHERE fecha_inicio = ? AND fecha_fin = ?"
         ).bind(startDate, endDate).all();
@@ -797,13 +826,18 @@ export default {
             endDate,
             totalIngresos,
             totalPendientes,
+            totalRecaudado: totalIngresos + totalPendientes,
+            totalEsperado,
+            totalPorCobrar,
             totalPotencial: totalIngresos + totalPendientes,
             totalGastos,
             balance: totalIngresos - totalGastos,
             cantidadRecibos: detalleIngresos.length,
             cantidadPendientes: recibosPendientes.length,
+            cantidadUsuariosPendientes: usuariosPendientes.length,
             detalleIngresos,
             recibosPendientes,
+            usuariosPendientes,
             gastos,
             cerrado: cierres.length > 0
           }

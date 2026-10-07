@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Receipt, Check, X, ExternalLink, Filter, CheckCircle, AlertCircle, MessageSquare, Send } from 'lucide-react';
+import { Receipt, Check, X, ExternalLink, Filter, CheckCircle, AlertCircle, MessageSquare, Send, Users } from 'lucide-react';
 import { apiGetRecibos, apiGetUsuarios, apiAprobarRecibo, apiRechazarRecibo, apiDispararWhatsAppMora } from '../../api.js';
 import {
   formatPeriodoLabel,
@@ -17,6 +17,7 @@ export default function RecibosAdmin() {
   const [recibos, setRecibos] = useState([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState('en_revision');
+  const [morososFilter, setMorososFilter] = useState('todos');
   const [selectedRecibo, setSelectedRecibo] = useState(null);
   const [nota, setNota] = useState('');
   const [processing, setProcessing] = useState(false);
@@ -133,33 +134,93 @@ export default function RecibosAdmin() {
     return `https://wa.me/${num}?text=${encodeURIComponent(msg)}`;
   }
 
-  const filtered = useMemo(() => recibos.filter(r => {
+  const dateRangeRecibos = useMemo(() => recibos.filter(r => {
     const uploadDate = r.fecha_subida ? r.fecha_subida.slice(0, 10) : (r.fecha_inicio ? r.fecha_inicio.slice(0, 10) : '');
     const fromMatches = !startDate || (uploadDate ? uploadDate >= startDate : true);
     const toMatches = !endDate || (uploadDate ? uploadDate <= endDate : true);
-    const statusMatches = filter === 'todos' || r.estado === filter;
     const closed = getClosedPeriods().includes(getPeriodoKey(r));
-    return fromMatches && toMatches && statusMatches && (includeClosed || !closed);
-  }), [recibos, filter, startDate, endDate, includeClosed]);
+    return fromMatches && toMatches && (includeClosed || !closed);
+  }), [recibos, startDate, endDate, includeClosed]);
 
+  const filtered = useMemo(() => {
+    if (filter === 'todos') return dateRangeRecibos;
+    return dateRangeRecibos.filter(r => r.estado === filter);
+  }, [dateRangeRecibos, filter]);
+
+  const counts = useMemo(() => ({
+    en_revision: dateRangeRecibos.filter(r => r.estado === 'en_revision').length,
+    aprobado: dateRangeRecibos.filter(r => r.estado === 'aprobado').length,
+    rechazado: dateRangeRecibos.filter(r => r.estado === 'rechazado').length,
+    todos: dateRangeRecibos.length
+  }), [dateRangeRecibos]);
+
+  // Clientes activos (excluyendo admin y usuario de prueba)
+  const activeClients = useMemo(() => {
+    return usuarios.filter(u =>
+      u.rol !== 'admin' &&
+      Number(u.activo) !== 0 &&
+      String(u.activo) !== 'false' &&
+      String(u.nombre || '').toLowerCase() !== 'prueba'
+    );
+  }, [usuarios]);
+
+  // Identificar quiénes ya pagaron en este ciclo contable (aprobados o en revisión)
+  const paidCycleInfo = useMemo(() => {
+    const paidIds = new Set();
+    const paidEmails = new Set();
+    dateRangeRecibos.forEach(r => {
+      if (r.estado === 'aprobado' || r.estado === 'en_revision') {
+        if (r.usuario_id) paidIds.add(String(r.usuario_id));
+        if (r.usuario_correo) paidEmails.add(String(r.usuario_correo).toLowerCase());
+      }
+    });
+    return { paidIds, paidEmails };
+  }, [dateRangeRecibos]);
+
+  // Clientes que faltan por pagar en este ciclo (ej: 19 clientes)
   const unpaidUsers = useMemo(() => {
-    return usuarios
-      .filter(user => user.rol !== 'admin' && Number(user.activo) !== 0 && String(user.activo) !== 'false')
+    return activeClients
+      .filter(user => {
+        const hasPaid = paidCycleInfo.paidIds.has(String(user.id)) ||
+          (user.correo && paidCycleInfo.paidEmails.has(String(user.correo).toLowerCase()));
+        return !hasPaid;
+      })
       .map(user => {
         const userReceipts = recibos.filter(r =>
-          String(r.usuario_id || r.user_id || r.id_usuario || '') === String(user.id) ||
-          (user.correo && String(r.usuario_correo || r.correo || '').toLowerCase() === String(user.correo).toLowerCase())
+          String(r.usuario_id || '') === String(user.id) ||
+          (user.correo && String(r.usuario_correo || '').toLowerCase() === String(user.correo).toLowerCase())
         );
         const billing = getUserBillingInfo(user.fecha_inicio, TODAY, userReceipts);
-        return { ...user, billing };
+        const isVencido = billing.diffDays <= 0;
+        return {
+          ...user,
+          billing: {
+            ...billing,
+            status: isVencido ? 'vencido' : 'pendiente',
+            badge: billing.diffDays === 0
+              ? 'Corte hoy'
+              : billing.diffDays < 0
+                ? `Vencido hace ${Math.abs(billing.diffDays)}d`
+                : `Corte en ${billing.diffDays}d`
+          }
+        };
       })
-      .filter(u => u.billing.status === 'vencido' || u.billing.status === 'pendiente')
       .sort((a, b) => {
         if (a.billing.status === 'vencido' && b.billing.status !== 'vencido') return -1;
         if (a.billing.status !== 'vencido' && b.billing.status === 'vencido') return 1;
         return a.billing.diffDays - b.billing.diffDays;
       });
-  }, [usuarios, recibos]);
+  }, [activeClients, paidCycleInfo, recibos]);
+
+  const displayedUnpaidUsers = useMemo(() => {
+    if (morososFilter === 'vencidos') return unpaidUsers.filter(u => u.billing.status === 'vencido');
+    if (morososFilter === 'pendientes') return unpaidUsers.filter(u => u.billing.status === 'pendiente');
+    return unpaidUsers;
+  }, [unpaidUsers, morososFilter]);
+
+  const totalPorCobrarUnpaid = useMemo(() => {
+    return unpaidUsers.reduce((sum, u) => sum + Number(u.valor_tarifa || 0), 0);
+  }, [unpaidUsers]);
 
   return (
     <div className="page-enter">
@@ -168,7 +229,7 @@ export default function RecibosAdmin() {
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <Filter size={16} color="var(--text-secondary)" />
           <span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>
-            {recibos.filter(r => r.estado === 'en_revision').length} pendientes
+            {counts.en_revision} en revisión ({counts.todos} recibos del período)
           </span>
         </div>
       </div>
@@ -198,10 +259,10 @@ export default function RecibosAdmin() {
         </div>
         <div style={{ display: 'flex', gap: 8, marginBottom: 20, flexWrap: 'wrap' }}>
           {[
-            { key: 'en_revision', label: '⏳ En revisión', count: recibos.filter(r => r.estado === 'en_revision').length },
-            { key: 'aprobado', label: '✓ Aprobados', count: recibos.filter(r => r.estado === 'aprobado').length },
-            { key: 'rechazado', label: '✗ Rechazados', count: recibos.filter(r => r.estado === 'rechazado').length },
-            { key: 'todos', label: 'Todos', count: recibos.length },
+            { key: 'en_revision', label: '⏳ En revisión', count: counts.en_revision },
+            { key: 'aprobado', label: '✓ Aprobados', count: counts.aprobado },
+            { key: 'rechazado', label: '✗ Rechazados', count: counts.rechazado },
+            { key: 'todos', label: 'Todos', count: counts.todos },
           ].map(f => (
             <button key={f.key} className={`btn btn-sm ${filter === f.key ? 'btn-primary' : 'btn-ghost'}`} onClick={() => setFilter(f.key)}>
               {f.label} ({f.count})
@@ -209,13 +270,44 @@ export default function RecibosAdmin() {
           ))}
         </div>
 
-        <div className="card" style={{ marginBottom: 20, borderColor: unpaidUsers.some(u => u.billing.status === 'vencido') ? 'rgba(239, 68, 68, 0.4)' : unpaidUsers.length ? 'rgba(245,158,11,0.4)' : undefined }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6, flexWrap: 'wrap', gap: 8 }}>
-            <h3 className="card-title" style={{ margin: 0 }}>Estado de Pagos (Cortes Individuales)</h3>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
-                {unpaidUsers.filter(u => u.billing.status === 'vencido').length} vencidos · {unpaidUsers.filter(u => u.billing.status === 'pendiente').length} pendientes
-              </span>
+        <div className="card" style={{ marginBottom: 20, borderColor: unpaidUsers.length ? 'rgba(245,158,11,0.5)' : undefined }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8, flexWrap: 'wrap', gap: 10 }}>
+            <div>
+              <h3 className="card-title" style={{ margin: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
+                <Users size={18} color="var(--accent-yellow)" />
+                Estado de Cobros del Ciclo ({unpaidUsers.length} clientes por pagar)
+              </h3>
+              <p style={{ margin: '4px 0 0', fontSize: 12, color: 'var(--text-secondary)' }}>
+                {unpaidUsers.filter(u => u.billing.status === 'vencido').length} con fecha cumplida · {unpaidUsers.filter(u => u.billing.status === 'pendiente').length} con corte próximo · Total cartera por recaudar: <strong style={{ color: 'var(--accent-yellow)' }}>${totalPorCobrarUnpaid.toLocaleString('es-CO')}</strong>
+              </p>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+              <div style={{ display: 'flex', gap: 4 }}>
+                <button
+                  type="button"
+                  className={`btn btn-sm ${morososFilter === 'todos' ? 'btn-primary' : 'btn-ghost'}`}
+                  style={{ padding: '3px 8px', fontSize: 11 }}
+                  onClick={() => setMorososFilter('todos')}
+                >
+                  Todos ({unpaidUsers.length})
+                </button>
+                <button
+                  type="button"
+                  className={`btn btn-sm ${morososFilter === 'vencidos' ? 'btn-primary' : 'btn-ghost'}`}
+                  style={{ padding: '3px 8px', fontSize: 11 }}
+                  onClick={() => setMorososFilter('vencidos')}
+                >
+                  Vencidos ({unpaidUsers.filter(u => u.billing.status === 'vencido').length})
+                </button>
+                <button
+                  type="button"
+                  className={`btn btn-sm ${morososFilter === 'pendientes' ? 'btn-primary' : 'btn-ghost'}`}
+                  style={{ padding: '3px 8px', fontSize: 11 }}
+                  onClick={() => setMorososFilter('pendientes')}
+                >
+                  Próximos ({unpaidUsers.filter(u => u.billing.status === 'pendiente').length})
+                </button>
+              </div>
               <button
                 type="button"
                 className="btn btn-ghost btn-sm"
@@ -229,12 +321,10 @@ export default function RecibosAdmin() {
               </button>
             </div>
           </div>
-          <p className="card-subtitle" style={{ marginBottom: 12 }}>
-            Cada usuario tiene su fecha de corte según su fecha de inicio registrada. Puedes enviar recordatorios manuales o usar el barrido automático diario (8:00 AM).
-          </p>
+
           {unpaidUsers.length ? (
-            <div style={{ display: 'grid', gap: 8, maxHeight: 250, overflowY: 'auto' }}>
-              {unpaidUsers.map(user => (
+            <div style={{ display: 'grid', gap: 8, maxHeight: 350, overflowY: 'auto', marginTop: 10 }}>
+              {displayedUnpaidUsers.map(user => (
                 <div
                   key={user.id}
                   style={{
@@ -250,7 +340,10 @@ export default function RecibosAdmin() {
                   <div>
                     <span style={{ fontWeight: 600, fontSize: 13 }}>{user.nombre}</span>
                     <span style={{ color: 'var(--text-muted)', marginLeft: 8, fontSize: 12 }}>
-                      {user.correo || user.celular || '—'}
+                      {user.placa_carro || user.placa_moto || user.placa || ''} {user.tipo_vehiculo ? `· ${user.tipo_vehiculo}` : ''}
+                    </span>
+                    <span style={{ color: 'var(--accent-yellow)', marginLeft: 8, fontSize: 12, fontWeight: 700 }}>
+                      ${Number(user.valor_tarifa || 0).toLocaleString('es-CO')}
                     </span>
                     <span style={{ color: 'var(--text-secondary)', marginLeft: 8, fontSize: 11 }}>
                       · Corte día {user.billing.billingDay} de cada mes
@@ -290,7 +383,7 @@ export default function RecibosAdmin() {
               ))}
             </div>
           ) : (
-            <p style={{ fontSize: 13, color: 'var(--accent-green)' }}>✓ Todos los usuarios se encuentran al día con sus pagos.</p>
+            <p style={{ fontSize: 13, color: 'var(--accent-green)', margin: '10px 0 0' }}>✓ Todos los usuarios se encuentran al día con sus pagos en este ciclo.</p>
           )}
         </div>
 

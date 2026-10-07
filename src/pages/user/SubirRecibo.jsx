@@ -52,6 +52,7 @@ export default function SubirRecibo() {
 
   const fileInputRef = useRef();
   const cameraInputRef = useRef();
+  const isSubmittingRef = useRef(false);
 
 
   useEffect(() => {
@@ -203,7 +204,10 @@ export default function SubirRecibo() {
 
   async function handleSubmit(e) {
     e.preventDefault();
+    if (isSubmittingRef.current || loading) return;
     if (!file) { alert('Selecciona una imagen del recibo'); return; }
+
+    isSubmittingRef.current = true;
     setLoading(true);
     setCompressing(true);
 
@@ -230,6 +234,7 @@ export default function SubirRecibo() {
     } catch (err) {
       setResult({ success: false, error: 'Error al procesar la imagen: ' + err.message });
     } finally {
+      isSubmittingRef.current = false;
       setCompressing(false);
       setLoading(false);
     }

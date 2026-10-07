@@ -591,7 +591,7 @@ export default {
 
       if (action === 'subirRecibo') {
         const id = generateId();
-        let url = '';
+        let imagenUrl = '';
         let r2Key = '';
 
         // Si se envió imagen en base64, guardarla en R2
@@ -608,7 +608,7 @@ export default {
           });
 
           const baseOrigin = env.MEDIA_BASE_URL || url.origin;
-          url = `${baseOrigin}/media/${r2Key}`;
+          imagenUrl = `${baseOrigin}/media/${r2Key}`;
         }
 
         const fechaInicio = normalizarFecha(data.fecha_inicio || data.fechaInicio);
@@ -616,6 +616,57 @@ export default {
         if (!fechaFin && fechaInicio) {
           const d = parseDate(fechaInicio);
           fechaFin = formatDate(new Date(d.getFullYear(), d.getMonth() + 1, d.getDate() - 1));
+        }
+
+        // Prevención estricta de duplicados:
+        // 1. Evitar doble clic si el mismo usuario ya envió un recibo en los últimos 60 segundos
+        // 2. Evitar tarjetas duplicadas si ya existe un recibo en revisión para el mismo ciclo/período
+        const { results: existingRecibos } = await env.DB.prepare(`
+          SELECT id, fecha_subida, url_imagen, r2_key
+          FROM recibos
+          WHERE usuario_id = ?
+            AND estado = 'en_revision'
+            AND (
+              (fecha_inicio = ? AND fecha_fin = ?)
+              OR datetime(fecha_subida) >= datetime('now', '-60 seconds')
+            )
+          ORDER BY fecha_subida DESC
+          LIMIT 1
+        `).bind(data.userId, fechaInicio, fechaFin).all();
+
+        if (existingRecibos && existingRecibos.length > 0) {
+          const existing = existingRecibos[0];
+          const diffMs = Date.now() - new Date(existing.fecha_subida).getTime();
+
+          // Si fue enviado hace menos de 60 segundos, ignorar el clic duplicado
+          if (diffMs < 60000) {
+            if (r2Key && r2Key !== existing.r2_key) {
+              await env.MEDIA_BUCKET.delete(r2Key).catch(() => {});
+            }
+            return json({
+              success: true,
+              data: { id: existing.id, url: existing.url_imagen, estado: 'en_revision', duplicatePrevented: true }
+            });
+          }
+
+          // Si es para el mismo período pero pasaron más de 60s, actualizar el recibo en vez de clonarlo
+          const nowIso = new Date().toISOString();
+          await env.DB.prepare(`
+            UPDATE recibos
+            SET fecha_subida = ?, metodo_pago = ?, url_imagen = ?, r2_key = ?
+            WHERE id = ?
+          `).bind(
+            nowIso,
+            data.metodoPago || data.metodo_pago || 'No especificado',
+            imagenUrl || existing.url_imagen,
+            r2Key || existing.r2_key,
+            existing.id
+          ).run();
+
+          return json({
+            success: true,
+            data: { id: existing.id, url: imagenUrl || existing.url_imagen, estado: 'en_revision', updated: true }
+          });
         }
 
         const nowIso = new Date().toISOString();
@@ -633,11 +684,11 @@ export default {
           data.mes || (new Date().getMonth() + 1),
           data.anio || new Date().getFullYear(),
           data.metodoPago || data.metodo_pago || 'No especificado',
-          url,
+          imagenUrl,
           r2Key
         ).run();
 
-        return json({ success: true, data: { id, url, estado: 'en_revision' } });
+        return json({ success: true, data: { id, url: imagenUrl, estado: 'en_revision' } });
       }
 
       if (action === 'aprobarRecibo') {

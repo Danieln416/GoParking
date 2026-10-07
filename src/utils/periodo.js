@@ -133,126 +133,106 @@ export function getUserBillingInfo(userStartDate, referenceDate = new Date(), us
 
   const msPerDay = 1000 * 60 * 60 * 24;
   const todayZero = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  const startZero = new Date(start.getFullYear(), start.getMonth(), start.getDate());
 
-  // 1. Determinar corte del mes actual o más reciente
+  // Si la fecha de inicio del usuario es en el futuro con respecto a hoy
+  if (todayZero < startZero) {
+    const diffDays = Math.round((startZero - todayZero) / msPerDay);
+    return {
+      billingDay,
+      periodStart: formatDateInput(startZero),
+      periodEnd: formatDateInput(addMonthsKeepingDay(startZero, 1, billingDay)),
+      cutoffDate: formatDateInput(startZero),
+      status: 'pendiente',
+      badge: `Inicia en ${diffDays}d`,
+      message: `Tu servicio inicia el ${formatDateLabel(startZero)}.`,
+      diffDays,
+      receipt: null
+    };
+  }
+
+  // 1. Determinar el corte mensual más reciente (en o antes de hoy)
   let candidateCutoff = addMonthsKeepingDay(todayZero, 0, billingDay);
   if (todayZero < candidateCutoff) {
     candidateCutoff = addMonthsKeepingDay(todayZero, -1, billingDay);
   }
-
-  // Si el usuario comenzó antes de candidateCutoff, verificar si pagó el ciclo que concluyó en candidateCutoff
-  const startZero = new Date(start.getFullYear(), start.getMonth(), start.getDate());
-  const prevPeriodStart = addMonthsKeepingDay(candidateCutoff, -1, billingDay);
-  const prevPeriodEnd = new Date(candidateCutoff.getFullYear(), candidateCutoff.getMonth(), candidateCutoff.getDate() - 1);
-  const hadPreviousCycle = startZero <= prevPeriodStart;
-
-  if (hadPreviousCycle) {
-    const prevStartStr = formatDateInput(prevPeriodStart);
-    const prevCutoffStr = formatDateInput(candidateCutoff);
-    const prevReceipts = (userReceipts || []).filter(r => {
-      if (r.fecha_inicio && r.fecha_inicio.slice(0, 10) === prevStartStr) return true;
-      if (r.fecha_subida) {
-        const u = r.fecha_subida.slice(0, 10);
-        return u >= prevStartStr && u <= prevCutoffStr;
-      }
-      return false;
-    });
-
-    const prevApproved = prevReceipts.find(r => r.estado === 'aprobado');
-    const prevInReview = prevReceipts.find(r => r.estado === 'en_revision');
-
-    if (!prevApproved && !prevInReview) {
-      const diffDays = Math.round((candidateCutoff - todayZero) / msPerDay);
-      const diasVencido = Math.abs(diffDays);
-      return {
-        billingDay,
-        periodStart: prevStartStr,
-        periodEnd: formatDateInput(prevPeriodEnd),
-        cutoffDate: prevCutoffStr,
-        status: 'vencido',
-        badge: diffDays === 0 ? 'Corte hoy' : 'Pago vencido',
-        message: diffDays === 0
-          ? `Hoy es tu fecha límite de pago (${formatDateLabel(candidateCutoff)}). Sube tu comprobante.`
-          : `Tu pago venció hace ${diasVencido} ${diasVencido === 1 ? 'día' : 'días'} (el ${formatDateLabel(candidateCutoff)}). Por favor sube tu comprobante.`,
-        diffDays,
-        receipt: null,
-        isPreviousPeriodOverdue: true
-      };
-    }
+  // No puede ser antes de la fecha de inicio del usuario
+  if (candidateCutoff < startZero) {
+    candidateCutoff = startZero;
   }
 
-  // 2. Período actual en curso
-  let periodStart = candidateCutoff;
-  if (periodStart < startZero) {
-    periodStart = startZero;
-  }
-  const nextCutoff = addMonthsKeepingDay(periodStart, 1, billingDay);
+  const nextCutoff = addMonthsKeepingDay(candidateCutoff, 1, billingDay);
   const periodEnd = new Date(nextCutoff.getFullYear(), nextCutoff.getMonth(), nextCutoff.getDate() - 1);
 
-  const startDateStr = formatDateInput(periodStart);
+  const startDateStr = formatDateInput(candidateCutoff);
   const endDateStr = formatDateInput(periodEnd);
-  const cutoffDateStr = formatDateInput(nextCutoff);
+  const cutoffDateStr = formatDateInput(candidateCutoff);
+  const nextCutoffDateStr = formatDateInput(nextCutoff);
 
-  // Buscar si el usuario ya tiene un recibo para este período
-  const periodReceipts = (userReceipts || []).filter(r => {
-    // Coincidencia exacta con fecha_inicio registrada
+  // Buscar si el usuario tiene un recibo para este ciclo mensual
+  const candidateCutoffTime = candidateCutoff.getTime();
+  const nextCutoffTime = nextCutoff.getTime();
+
+  const matchingReceipts = (userReceipts || []).filter(r => {
     if (r.fecha_inicio && r.fecha_inicio.slice(0, 10) === startDateStr) {
       return true;
     }
-    // O comprobante subido dentro de la ventana del período
     if (r.fecha_subida) {
-      const uploadDate = r.fecha_subida.slice(0, 10);
-      const toleranceEnd = formatDateInput(new Date(nextCutoff.getTime() + 5 * 86400000));
-      return uploadDate >= startDateStr && uploadDate <= toleranceEnd;
+      const uploadTime = new Date(r.fecha_subida).getTime();
+      const minUpload = candidateCutoffTime - 12 * 86400000;
+      const maxUpload = nextCutoffTime + 5 * 86400000;
+      return uploadTime >= minUpload && uploadTime <= maxUpload;
     }
     return false;
   });
 
-  const approved = periodReceipts.find(r => r.estado === 'aprobado');
-  const inReview = periodReceipts.find(r => r.estado === 'en_revision');
-  const activeReceipt = approved || inReview || periodReceipts[0] || null;
+  const approved = matchingReceipts.find(r => r.estado === 'aprobado');
+  const inReview = matchingReceipts.find(r => r.estado === 'en_revision');
 
-  const diffDays = Math.round((nextCutoff - todayZero) / msPerDay);
-
-  let status = 'pendiente'; // 'al_dia' | 'en_revision' | 'pendiente' | 'vencido'
-  let message = '';
-  let badge = '';
+  // Días transcurridos desde que venció la fecha de corte (si no ha pagado)
+  const diffFromCutoff = Math.round((todayZero - candidateCutoff) / msPerDay);
+  // Días que faltan para el siguiente corte (si ya pagó)
+  const daysUntilNext = Math.round((nextCutoff - todayZero) / msPerDay);
 
   if (approved) {
-    status = 'al_dia';
-    badge = 'Al día';
-    message = `Estás al día. Tu próximo corte es el ${formatDateLabel(nextCutoff)}.`;
+    return {
+      billingDay,
+      periodStart: startDateStr,
+      periodEnd: endDateStr,
+      cutoffDate: nextCutoffDateStr,
+      status: 'al_dia',
+      badge: 'Al día',
+      message: `Estás al día. Tu próximo corte es el ${formatDateLabel(nextCutoff)}.`,
+      diffDays: daysUntilNext,
+      receipt: approved
+    };
   } else if (inReview) {
-    status = 'en_revision';
-    badge = 'En revisión';
-    message = 'Tu recibo de pago está siendo revisado por el administrador.';
-  } else if (diffDays < 0) {
-    status = 'vencido';
-    badge = 'Pago vencido';
-    const diasVencido = Math.abs(diffDays);
-    message = `Tu pago venció hace ${diasVencido} ${diasVencido === 1 ? 'día' : 'días'} (el ${formatDateLabel(nextCutoff)}). Por favor sube tu comprobante.`;
-  } else if (diffDays === 0) {
-    status = 'vencido';
-    badge = 'Corte hoy';
-    message = `Hoy es tu fecha límite de pago (${formatDateLabel(nextCutoff)}). Sube tu comprobante.`;
+    return {
+      billingDay,
+      periodStart: startDateStr,
+      periodEnd: endDateStr,
+      cutoffDate: cutoffDateStr,
+      status: 'en_revision',
+      badge: 'En revisión',
+      message: 'Tu recibo de pago está siendo revisado por el administrador.',
+      diffDays: -diffFromCutoff,
+      receipt: inReview
+    };
   } else {
-    status = 'pendiente';
-    badge = `Corte en ${diffDays}d`;
-    message = `Tu fecha de corte es el ${formatDateLabel(nextCutoff)}. Recuerda realizar tu pago.`;
+    return {
+      billingDay,
+      periodStart: startDateStr,
+      periodEnd: endDateStr,
+      cutoffDate: cutoffDateStr,
+      status: 'vencido',
+      badge: diffFromCutoff === 0 ? 'Corte hoy' : `Vencido hace ${diffFromCutoff}d`,
+      message: diffFromCutoff === 0
+        ? `Hoy es tu fecha límite de pago (${formatDateLabel(candidateCutoff)}). Sube tu comprobante.`
+        : `Tu pago venció hace ${diffFromCutoff} ${diffFromCutoff === 1 ? 'día' : 'días'} (el ${formatDateLabel(candidateCutoff)}). Por favor sube tu comprobante.`,
+      diffDays: -diffFromCutoff,
+      receipt: null
+    };
   }
-
-  return {
-    billingDay,
-    periodStart: startDateStr,
-    periodEnd: endDateStr,
-    cutoffDate: cutoffDateStr,
-    status,
-    badge,
-    message,
-    diffDays,
-    receipt: activeReceipt,
-    isPreviousPeriodOverdue: false
-  };
 }
 
 /**

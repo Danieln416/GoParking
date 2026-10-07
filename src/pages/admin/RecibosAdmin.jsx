@@ -6,7 +6,8 @@ import {
   getClosedPeriods,
   getPeriodoKey,
   getUserBillingInfo,
-  getAdminClosingPeriod
+  getAdminClosingPeriod,
+  formatDateLabel
 } from '../../utils/periodo.js';
 import { getReceiptMediaUrl, getReceiptViewerUrl } from '../../utils/media.js';
 
@@ -123,13 +124,19 @@ export default function RecibosAdmin() {
     const primerNombre = (user.nombre || '').split(' ')[0];
     const valorFmt = `$${Number(user.valor_tarifa || 0).toLocaleString('es-CO')}`;
     const dias = Math.abs(user.billing?.diffDays || 0);
-    const corte = user.billing?.cutoffDate || '';
+    const corte = user.billing?.cutoffDate ? formatDateLabel(user.billing.cutoffDate) : '';
 
-    const msg = `Hola ${primerNombre} 👋, te saludamos del Parqueadero GoParking 🚗.\n\n` +
-      `Te recordamos amablemente que tu mensualidad presenta *${dias} día(s) de vencimiento* (Fecha de corte: ${corte}).\n\n` +
-      `💰 *Valor a cancelar:* ${valorFmt}\n\n` +
-      `📌 Por favor sube tu comprobante en la aplicación web una vez realizado el pago para mantener tu registro al día.\n\n` +
-      `¡Muchas gracias por tu puntualidad!`;
+    const msg = dias === 0
+      ? `Hola ${primerNombre} 👋, te saludamos del Parqueadero GoParking 🚗.\n\n` +
+        `Te recordamos amablemente que *hoy vence tu mensualidad* (Fecha límite: ${corte}).\n\n` +
+        `💰 *Valor a cancelar:* ${valorFmt}\n\n` +
+        `📌 Por favor sube tu comprobante en la aplicación web una vez realizado el pago para mantener tu registro al día.\n\n` +
+        `¡Muchas gracias por tu puntualidad!`
+      : `Hola ${primerNombre} 👋, te saludamos del Parqueadero GoParking 🚗.\n\n` +
+        `Te recordamos amablemente que tu mensualidad presenta *${dias} día(s) de vencimiento* (Fecha de corte: ${corte}).\n\n` +
+        `💰 *Valor a cancelar:* ${valorFmt}\n\n` +
+        `📌 Por favor sube tu comprobante en la aplicación web una vez realizado el pago para mantener tu registro al día.\n\n` +
+        `¡Muchas gracias por tu puntualidad!`;
 
     return `https://wa.me/${num}?text=${encodeURIComponent(msg)}`;
   }
@@ -270,48 +277,22 @@ export default function RecibosAdmin() {
           ))}
         </div>
 
-        <div className="card" style={{ marginBottom: 20, borderColor: unpaidUsers.length ? 'rgba(245,158,11,0.5)' : undefined }}>
+        <div className="card" style={{ marginBottom: 20, borderColor: unpaidUsers.length ? 'rgba(239, 68, 68, 0.4)' : undefined }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8, flexWrap: 'wrap', gap: 10 }}>
             <div>
               <h3 className="card-title" style={{ margin: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
-                <Users size={18} color="var(--accent-yellow)" />
-                Estado de Cobros del Ciclo ({unpaidUsers.length} clientes por pagar)
+                <Users size={18} color="var(--accent-red)" />
+                Estado de Cobros del Ciclo ({unpaidUsers.length} clientes con pago pendiente)
               </h3>
               <p style={{ margin: '4px 0 0', fontSize: 12, color: 'var(--text-secondary)' }}>
-                {unpaidUsers.filter(u => u.billing.status === 'vencido').length} con fecha cumplida · {unpaidUsers.filter(u => u.billing.status === 'pendiente').length} con corte próximo · Total cartera por recaudar: <strong style={{ color: 'var(--accent-yellow)' }}>${totalPorCobrarUnpaid.toLocaleString('es-CO')}</strong>
+                Clientes que no han registrado comprobante para este ciclo · Cartera total por recaudar: <strong style={{ color: 'var(--accent-yellow)' }}>${totalPorCobrarUnpaid.toLocaleString('es-CO')}</strong>
               </p>
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-              <div style={{ display: 'flex', gap: 4 }}>
-                <button
-                  type="button"
-                  className={`btn btn-sm ${morososFilter === 'todos' ? 'btn-primary' : 'btn-ghost'}`}
-                  style={{ padding: '3px 8px', fontSize: 11 }}
-                  onClick={() => setMorososFilter('todos')}
-                >
-                  Todos ({unpaidUsers.length})
-                </button>
-                <button
-                  type="button"
-                  className={`btn btn-sm ${morososFilter === 'vencidos' ? 'btn-primary' : 'btn-ghost'}`}
-                  style={{ padding: '3px 8px', fontSize: 11 }}
-                  onClick={() => setMorososFilter('vencidos')}
-                >
-                  Vencidos ({unpaidUsers.filter(u => u.billing.status === 'vencido').length})
-                </button>
-                <button
-                  type="button"
-                  className={`btn btn-sm ${morososFilter === 'pendientes' ? 'btn-primary' : 'btn-ghost'}`}
-                  style={{ padding: '3px 8px', fontSize: 11 }}
-                  onClick={() => setMorososFilter('pendientes')}
-                >
-                  Próximos ({unpaidUsers.filter(u => u.billing.status === 'pendiente').length})
-                </button>
-              </div>
               <button
                 type="button"
                 className="btn btn-ghost btn-sm"
-                style={{ fontSize: 12, color: '#25D366', borderColor: 'rgba(37, 211, 102, 0.4)', padding: '4px 10px' }}
+                style={{ fontSize: 12, color: '#25D366', borderColor: 'rgba(37, 211, 102, 0.4)', padding: '5px 12px' }}
                 onClick={handleDispararBarrido}
                 disabled={runningSweep}
                 title="Ejecutar barrido automático de Cloudflare para notificar morosos"

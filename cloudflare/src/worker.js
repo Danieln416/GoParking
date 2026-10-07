@@ -89,66 +89,48 @@ function calcularEstadoMoraUsuario(usuario, userReceipts = [], refDate = new Dat
 
   const msPerDay = 86400000;
   const todayZero = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  const startZero = new Date(start.getFullYear(), start.getMonth(), start.getDate());
 
+  if (todayZero < startZero) {
+    return { enMora: false, diasMora: 0, fechaCorte: formatDate(startZero) };
+  }
+
+  // Corte mensual más reciente (en o antes de hoy)
   let candidateCutoff = addMonthsKeepingDay(todayZero, 0, billingDay);
   if (todayZero < candidateCutoff) {
     candidateCutoff = addMonthsKeepingDay(todayZero, -1, billingDay);
   }
-
-  const startZero = new Date(start.getFullYear(), start.getMonth(), start.getDate());
-  const prevPeriodStart = addMonthsKeepingDay(candidateCutoff, -1, billingDay);
-  const hadPrevCycle = startZero <= prevPeriodStart;
-
-  if (hadPrevCycle) {
-    const prevStartStr = formatDate(prevPeriodStart);
-    const prevCutoffStr = formatDate(candidateCutoff);
-
-    const prevReceipt = userReceipts.find(r => {
-      if (r.fecha_inicio && r.fecha_inicio.slice(0, 10) === prevStartStr) return true;
-      if (r.fecha_subida) {
-        const u = r.fecha_subida.slice(0, 10);
-        return u >= prevStartStr && u <= prevCutoffStr;
-      }
-      return false;
-    });
-
-    const isPaid = prevReceipt && (prevReceipt.estado === 'aprobado' || prevReceipt.estado === 'en_revision');
-    if (!isPaid) {
-      const diffDays = Math.round((candidateCutoff - todayZero) / msPerDay);
-      return {
-        enMora: true,
-        diasMora: Math.abs(diffDays),
-        fechaCorte: prevCutoffStr,
-        periodoTexto: `${prevStartStr} al ${formatDate(new Date(candidateCutoff.getTime() - 86400000))}`
-      };
-    }
+  if (candidateCutoff < startZero) {
+    candidateCutoff = startZero;
   }
 
-  // Período actual
-  let currentStart = candidateCutoff;
-  if (currentStart < startZero) currentStart = startZero;
-  const nextCutoff = addMonthsKeepingDay(currentStart, 1, billingDay);
-  const nextCutoffStr = formatDate(nextCutoff);
+  const nextCutoff = addMonthsKeepingDay(candidateCutoff, 1, billingDay);
+  const candidateCutoffTime = candidateCutoff.getTime();
+  const nextCutoffTime = nextCutoff.getTime();
+  const startDateStr = formatDate(candidateCutoff);
 
-  const currentReceipt = userReceipts.find(r => {
-    if (r.fecha_inicio && r.fecha_inicio.slice(0, 10) === formatDate(currentStart)) return true;
-    if (r.fecha_subida) return r.fecha_subida.slice(0, 10) >= formatDate(currentStart);
+  const matchingReceipt = userReceipts.find(r => {
+    if (r.fecha_inicio && r.fecha_inicio.slice(0, 10) === startDateStr) return true;
+    if (r.fecha_subida) {
+      const uploadTime = new Date(r.fecha_subida).getTime();
+      return uploadTime >= (candidateCutoffTime - 12 * 86400000) && uploadTime <= (nextCutoffTime + 5 * 86400000);
+    }
     return false;
   });
 
-  const isPaid = currentReceipt && (currentReceipt.estado === 'aprobado' || currentReceipt.estado === 'en_revision');
-  const diffDays = Math.round((nextCutoff - todayZero) / msPerDay);
+  const isPaid = matchingReceipt && (matchingReceipt.estado === 'aprobado' || matchingReceipt.estado === 'en_revision');
 
-  if (!isPaid && diffDays <= 0) {
-    return {
-      enMora: true,
-      diasMora: Math.abs(diffDays),
-      fechaCorte: nextCutoffStr,
-      periodoTexto: `${formatDate(currentStart)} al ${formatDate(new Date(nextCutoff.getTime() - 86400000))}`
-    };
+  if (isPaid) {
+    return { enMora: false, diasMora: 0, fechaCorte: formatDate(nextCutoff) };
   }
 
-  return { enMora: false, diasMora: 0, fechaCorte: nextCutoffStr };
+  const diffFromCutoff = Math.round((todayZero - candidateCutoff) / msPerDay);
+  return {
+    enMora: true,
+    diasMora: Math.max(0, diffFromCutoff),
+    fechaCorte: formatDate(candidateCutoff),
+    periodoTexto: `${formatDate(candidateCutoff)} al ${formatDate(new Date(nextCutoff.getTime() - 86400000))}`
+  };
 }
 
 // ============================================================

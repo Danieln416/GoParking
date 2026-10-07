@@ -1,0 +1,21 @@
+-- Restaurar contrasenas originales de Google Sheets
+UPDATE usuarios SET contrasena = '42bdafbcad39b73637fa2d12c884d4f924c003d85948d13c89c63ac048929251' WHERE id = '36988da5-1ed2-47ad-bf02-27b12617f716';
+UPDATE usuarios SET contrasena = 'effb5e7f7de69e9b0b8abae7fe40a65e09c0c75b0630a89f7e69f5acdcbcd309' WHERE id = '563638b5-516b-49f2-b5a5-43a2205922a1';
+UPDATE usuarios SET contrasena = '7083afe74391d264aab4b4e1d9897956c773dec59a9f50203ee41e28987d8756' WHERE id = 'cf74f2c7-4b46-494e-b84a-31537da310e1';
+UPDATE usuarios SET contrasena = '574e5e35931bd31771d9c02cf89e458fbcf267f20093f95213e5370e26de8244' WHERE id = 'b816f7aa-8b3f-4886-9492-465edee346bf';
+UPDATE usuarios SET contrasena = '8874b0c9202942f77335a10bd42ee943fbe82f541a4eae2c7eead7425e5dd479' WHERE id = 'd88901d4-0dcc-4a28-85b3-c62bf6bf1092';
+UPDATE usuarios SET contrasena = '3e75301f76cb274f6c6d0953f3588743f932d57c9989d38142dbadf4bf38a3ef' WHERE id = 'b66b5743-c4ab-4071-8645-9b74046df835';
+UPDATE usuarios SET contrasena = '240e10bbaec050b399f3d7182c9866c8b6809173fe43505fdbbc62851c3c8817' WHERE id = '41852c5b-d9c8-4599-ab21-d46cf122bd17';
+UPDATE usuarios SET contrasena = '48342867a15a55c853c5602607dc5d1253a0ad9ad37c1c31e96e5c2f5224e5a5' WHERE id = '319d4e0a-0500-484c-9731-ae5de800502c';
+UPDATE usuarios SET contrasena = '9aa88def50a482382688861138326d2864e8a5ea4e385cafaabed3554743b1ce' WHERE id = '6f9bde2b-11d6-4d5b-94bd-81da18ddd37b';
+UPDATE usuarios SET contrasena = 'b710acfd18e859a0d8656744cb20156f521db018529c73632c8141fef89f0b05' WHERE id = '05ce5e22-7d70-40d5-9152-3648a75671ef';
+UPDATE usuarios SET contrasena = 'fb36c1205d74776446927aff7b7c9200e7eda88940860dd3f2db305186c0fe34' WHERE id = 'fdbaf833-1c7f-441d-b99b-911644879d44';
+UPDATE usuarios SET contrasena = '96265b749c1352f40007c414a9360f36d9befe34e4f12830bd2636764b974fe1' WHERE id = '6910160a-3845-47a4-a039-96431bc65e69';
+UPDATE usuarios SET contrasena = '3680e453309ce732b5379caa2becb03225d8a39a855c20f65599504ee6c284e0' WHERE id = 'c4f45ea3-16df-4af5-aacc-a4fc95f53772';
+UPDATE usuarios SET contrasena = '058c658d0707d609d4c026bfdbfb11e4bf0fad8e8e6ce965b1eced50635a6bb4' WHERE id = '79b70580-1819-416d-8cca-7baf4e07b2bc';
+UPDATE usuarios SET contrasena = '7a4ef7de8b19586678785f319caa3c740a36c08cd82e4eb6d2777d88e0d6c656' WHERE id = '9ace42a9-63fd-4d6a-baf6-075988980cb8';
+UPDATE usuarios SET contrasena = '1db96bf0a54df41c64b6dfc63cedfee6274c6d5a2a05d25c280470ba904c6c99' WHERE id = '7a26b905-a451-40f0-8d84-9f9fba06e9f9';
+UPDATE usuarios SET contrasena = '454565004bfc8e5c47da68c193f89ba45a0e7da4012dc80c975e23a43fb03c9d' WHERE id = '21656dcc-d443-409c-b5e2-c0c654a15921';
+UPDATE usuarios SET contrasena = '1d1aa62b5390d47370e3f2be13cd5d42c4419abde4f64664187d43da97091202' WHERE id = 'a07c3dc1-53c7-4aa4-8e3c-bc3f22b9e7a8';
+UPDATE usuarios SET contrasena = '91dc7e3665cf6247823b73179e5459bb2a61f4dda720d3b3ff8e0ebfeed66dba' WHERE id = '3123327d-13ec-47e1-93c4-392f9f09d859';
+UPDATE usuarios SET contrasena = '180395957718c60f6518cfd3e0241097d84fc8982c4effba6f977cc9df2ed252' WHERE id = 'f8b80a99-3939-4025-8117-8423600fce8c';

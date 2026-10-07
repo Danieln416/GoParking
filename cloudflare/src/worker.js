@@ -370,7 +370,8 @@ export default {
       if (action === 'login' || path === '/api/login') {
         const correo = String(data.correo || '').trim().toLowerCase();
         const rawPassword = String(data.contrasena || '');
-        const hash = await hashPassword(rawPassword);
+        const cleanHash = await hashPassword(rawPassword);
+        const legacyHash = await hashPassword(rawPassword + 'parking_secret_key_2024');
 
         let usuario = await env.DB.prepare(
           "SELECT * FROM usuarios WHERE lower(correo) = ?"
@@ -388,14 +389,18 @@ export default {
           return json({ success: false, error: 'Usuario precargado sin credenciales configuradas. Contacte al administrador.' });
         }
 
-        const match = (usuario.contrasena === hash) || (usuario.contrasena === rawPassword);
+        const match = (usuario.contrasena === cleanHash) ||
+                      (usuario.contrasena === legacyHash) ||
+                      (usuario.contrasena === rawPassword);
+
         if (!match) {
           return json({ success: false, error: 'Correo o contraseña incorrectos' });
         }
 
-        // Si la contraseña estaba en texto plano, actualizarla automáticamente al hash seguro
-        if (usuario.contrasena === rawPassword && rawPassword !== hash) {
-          await env.DB.prepare("UPDATE usuarios SET contrasena = ? WHERE id = ?").bind(hash, usuario.id).run();
+        // Si la contraseña estaba en formato legacy (Apps Script con salt) o en texto plano,
+        // actualizarla automáticamente y de forma transparente al hash estándar seguro
+        if (usuario.contrasena !== cleanHash) {
+          await env.DB.prepare("UPDATE usuarios SET contrasena = ? WHERE id = ?").bind(cleanHash, usuario.id).run();
         }
 
         const { contrasena, ...publicData } = usuario;

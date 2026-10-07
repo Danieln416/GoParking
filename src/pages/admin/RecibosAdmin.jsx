@@ -1,45 +1,67 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Receipt, Check, X, ExternalLink, Filter, CheckCircle, AlertCircle, MessageSquare, Send, Users } from 'lucide-react';
-import { apiGetRecibos, apiGetUsuarios, apiAprobarRecibo, apiRechazarRecibo, apiDispararWhatsAppMora } from '../../api.js';
+import {
+  Receipt,
+  Check,
+  X,
+  ExternalLink,
+  Filter,
+  CheckCircle,
+  AlertCircle,
+  MessageSquare,
+  Send,
+  Users,
+  ChevronLeft,
+  ChevronRight,
+  Calendar,
+  Search
+} from 'lucide-react';
+import {
+  apiGetRecibos,
+  apiGetUsuarios,
+  apiAprobarRecibo,
+  apiRechazarRecibo,
+  apiDispararWhatsAppMora,
+  apiGetCierreMes
+} from '../../api.js';
 import {
   formatPeriodoLabel,
-  getClosedPeriods,
-  getPeriodoKey,
-  getUserBillingInfo,
   getAdminClosingPeriod,
+  getPreviousAdminClosingPeriod,
+  getNextAdminClosingPeriod,
   formatDateLabel
 } from '../../utils/periodo.js';
 import { getReceiptMediaUrl, getReceiptViewerUrl } from '../../utils/media.js';
 
-const TODAY = new Date();
-const ADMIN_CYCLE = getAdminClosingPeriod(TODAY);
+const ADMIN_CYCLE = getAdminClosingPeriod(new Date());
 
 export default function RecibosAdmin() {
   const [recibos, setRecibos] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [cierreLoading, setCierreLoading] = useState(false);
+  const [cierreData, setCierreData] = useState(null);
   const [filter, setFilter] = useState('en_revision');
-  const [morososFilter, setMorososFilter] = useState('todos');
+  const [searchMoroso, setSearchMoroso] = useState('');
   const [selectedRecibo, setSelectedRecibo] = useState(null);
   const [nota, setNota] = useState('');
   const [processing, setProcessing] = useState(false);
   const [toast, setToast] = useState(null);
-  const [usuarios, setUsuarios] = useState([]);
   const [startDate, setStartDate] = useState(ADMIN_CYCLE.startDate);
   const [endDate, setEndDate] = useState(ADMIN_CYCLE.endDate);
-  const [includeClosed, setIncludeClosed] = useState(false);
   const [brokenImages, setBrokenImages] = useState({});
   const [imageRetries, setImageRetries] = useState({});
+  const [runningSweep, setRunningSweep] = useState(false);
 
   useEffect(() => {
     loadRecibos();
-    apiGetUsuarios().then(res => res.success && setUsuarios(res.data || []));
   }, []);
 
   useEffect(() => {
-    const refresh = () => setIncludeClosed(false);
-    window.addEventListener('goparking-period-closed', refresh);
-    return () => window.removeEventListener('goparking-period-closed', refresh);
-  }, []);
+    if (startDate && endDate) {
+      loadCierre(startDate, endDate);
+    } else {
+      setCierreData(null);
+    }
+  }, [startDate, endDate]);
 
   async function loadRecibos() {
     const res = await apiGetRecibos('all');
@@ -47,6 +69,31 @@ export default function RecibosAdmin() {
       setRecibos([...res.data].sort((a, b) => new Date(b.fecha_subida) - new Date(a.fecha_subida)));
     }
     setLoading(false);
+  }
+
+  async function loadCierre(s, e) {
+    if (!s || !e) return;
+    setCierreLoading(true);
+    try {
+      const res = await apiGetCierreMes(s, e);
+      if (res.success) {
+        setCierreData(res.data);
+      }
+    } catch (err) {
+      console.error('Error al cargar datos de cierre:', err);
+    } finally {
+      setCierreLoading(false);
+    }
+  }
+
+  function handleSelectCycle(period) {
+    setStartDate(period.startDate);
+    setEndDate(period.endDate);
+  }
+
+  function handleVerTodos() {
+    setStartDate('');
+    setEndDate('');
   }
 
   function handleImageError(id) {
@@ -62,8 +109,8 @@ export default function RecibosAdmin() {
   async function handleAprobar(recibo) {
     setProcessing(true);
     const notaFinal = nota || 'Aprobado por el administrador';
-    
-    // Actualización optimista: refleja el cambio en la interfaz al instante
+
+    // Actualización optimista
     setRecibos(prev => prev.map(item => item.id === recibo.id ? { ...item, estado: 'aprobado', admin_nota: notaFinal } : item));
     setSelectedRecibo(null);
     setNota('');
@@ -73,6 +120,8 @@ export default function RecibosAdmin() {
     if (!res.success) {
       showToast('error', res.error || 'Error al guardar la aprobación en el servidor');
       loadRecibos();
+    } else {
+      if (startDate && endDate) loadCierre(startDate, endDate);
     }
     setProcessing(false);
   }
@@ -80,7 +129,7 @@ export default function RecibosAdmin() {
   async function handleRechazar(recibo) {
     if (!nota) { showToast('error', 'Indica el motivo del rechazo'); return; }
     setProcessing(true);
-    
+
     // Actualización optimista
     setRecibos(prev => prev.map(item => item.id === recibo.id ? { ...item, estado: 'rechazado', admin_nota: nota } : item));
     setSelectedRecibo(null);
@@ -91,11 +140,11 @@ export default function RecibosAdmin() {
     if (!res.success) {
       showToast('error', res.error || 'Error al guardar el rechazo en el servidor');
       loadRecibos();
+    } else {
+      if (startDate && endDate) loadCierre(startDate, endDate);
     }
     setProcessing(false);
   }
-
-  const [runningSweep, setRunningSweep] = useState(false);
 
   function showToast(type, msg) {
     setToast({ type, msg });
@@ -123,31 +172,32 @@ export default function RecibosAdmin() {
     if (num.length === 10 && num.startsWith('3')) num = '57' + num;
     const primerNombre = (user.nombre || '').split(' ')[0];
     const valorFmt = `$${Number(user.valor_tarifa || 0).toLocaleString('es-CO')}`;
-    const dias = Math.abs(user.billing?.diffDays || 0);
-    const corte = user.billing?.cutoffDate ? formatDateLabel(user.billing.cutoffDate) : '';
+    const corteDia = user.fecha_inicio ? new Date(user.fecha_inicio).getDate() : null;
 
-    const msg = dias === 0
-      ? `Hola ${primerNombre} 👋, te saludamos del Parqueadero GoParking 🚗.\n\n` +
-        `Te recordamos amablemente que *hoy vence tu mensualidad* (Fecha límite: ${corte}).\n\n` +
-        `💰 *Valor a cancelar:* ${valorFmt}\n\n` +
-        `📌 Por favor sube tu comprobante en la aplicación web una vez realizado el pago para mantener tu registro al día.\n\n` +
-        `¡Muchas gracias por tu puntualidad!`
-      : `Hola ${primerNombre} 👋, te saludamos del Parqueadero GoParking 🚗.\n\n` +
-        `Te recordamos amablemente que tu mensualidad presenta *${dias} día(s) de vencimiento* (Fecha de corte: ${corte}).\n\n` +
-        `💰 *Valor a cancelar:* ${valorFmt}\n\n` +
-        `📌 Por favor sube tu comprobante en la aplicación web una vez realizado el pago para mantener tu registro al día.\n\n` +
-        `¡Muchas gracias por tu puntualidad!`;
+    const periodoTxt = startDate && endDate
+      ? `del ${startDate} al ${endDate}`
+      : 'del ciclo actual';
+
+    const msg = `Hola ${primerNombre} 👋, te saludamos del Parqueadero GoParking 🚗.\n\n` +
+      `Te recordamos amablemente tu mensualidad correspondiente al ciclo ${periodoTxt}` +
+      (corteDia ? ` (Día de corte: ${corteDia} de cada mes)` : '') + `.\n\n` +
+      `💰 *Valor a cancelar:* ${valorFmt}\n\n` +
+      `📌 Por favor sube tu comprobante en la aplicación web una vez realizado el pago para mantener tu registro al día.\n\n` +
+      `¡Muchas gracias por tu puntualidad!`;
 
     return `https://wa.me/${num}?text=${encodeURIComponent(msg)}`;
   }
 
-  const dateRangeRecibos = useMemo(() => recibos.filter(r => {
-    const uploadDate = r.fecha_subida ? r.fecha_subida.slice(0, 10) : (r.fecha_inicio ? r.fecha_inicio.slice(0, 10) : '');
-    const fromMatches = !startDate || (uploadDate ? uploadDate >= startDate : true);
-    const toMatches = !endDate || (uploadDate ? uploadDate <= endDate : true);
-    const closed = getClosedPeriods().includes(getPeriodoKey(r));
-    return fromMatches && toMatches && (includeClosed || !closed);
-  }), [recibos, startDate, endDate, includeClosed]);
+  // Recibos filtrados por el rango de fechas seleccionado
+  const dateRangeRecibos = useMemo(() => {
+    if (!startDate && !endDate) return recibos;
+    return recibos.filter(r => {
+      const uploadDate = r.fecha_subida ? r.fecha_subida.slice(0, 10) : (r.fecha_inicio ? r.fecha_inicio.slice(0, 10) : '');
+      const fromMatches = !startDate || (uploadDate ? uploadDate >= startDate : true);
+      const toMatches = !endDate || (uploadDate ? uploadDate <= endDate : true);
+      return fromMatches && toMatches;
+    });
+  }, [recibos, startDate, endDate]);
 
   const filtered = useMemo(() => {
     if (filter === 'todos') return dateRangeRecibos;
@@ -161,73 +211,35 @@ export default function RecibosAdmin() {
     todos: dateRangeRecibos.length
   }), [dateRangeRecibos]);
 
-  // Clientes activos (excluyendo admin y usuario de prueba)
-  const activeClients = useMemo(() => {
-    return usuarios.filter(u =>
-      u.rol !== 'admin' &&
-      Number(u.activo) !== 0 &&
-      String(u.activo) !== 'false' &&
-      String(u.nombre || '').toLowerCase() !== 'prueba'
-    );
-  }, [usuarios]);
-
-  // Identificar quiénes ya pagaron en este ciclo contable (aprobados o en revisión)
-  const paidCycleInfo = useMemo(() => {
-    const paidIds = new Set();
-    const paidEmails = new Set();
-    dateRangeRecibos.forEach(r => {
-      if (r.estado === 'aprobado' || r.estado === 'en_revision') {
-        if (r.usuario_id) paidIds.add(String(r.usuario_id));
-        if (r.usuario_correo) paidEmails.add(String(r.usuario_correo).toLowerCase());
-      }
-    });
-    return { paidIds, paidEmails };
-  }, [dateRangeRecibos]);
-
-  // Clientes que faltan por pagar en este ciclo (ej: 19 clientes)
+  // Lista de usuarios pendientes del ciclo sincronizada con el backend (Cierre de Mes)
   const unpaidUsers = useMemo(() => {
-    return activeClients
-      .filter(user => {
-        const hasPaid = paidCycleInfo.paidIds.has(String(user.id)) ||
-          (user.correo && paidCycleInfo.paidEmails.has(String(user.correo).toLowerCase()));
-        return !hasPaid;
-      })
-      .map(user => {
-        const userReceipts = recibos.filter(r =>
-          String(r.usuario_id || '') === String(user.id) ||
-          (user.correo && String(r.usuario_correo || '').toLowerCase() === String(user.correo).toLowerCase())
-        );
-        const billing = getUserBillingInfo(user.fecha_inicio, TODAY, userReceipts);
-        const isVencido = billing.diffDays <= 0;
-        return {
-          ...user,
-          billing: {
-            ...billing,
-            status: isVencido ? 'vencido' : 'pendiente',
-            badge: billing.diffDays === 0
-              ? 'Corte hoy'
-              : billing.diffDays < 0
-                ? `Vencido hace ${Math.abs(billing.diffDays)}d`
-                : `Corte en ${billing.diffDays}d`
-          }
-        };
-      })
-      .sort((a, b) => {
-        if (a.billing.status === 'vencido' && b.billing.status !== 'vencido') return -1;
-        if (a.billing.status !== 'vencido' && b.billing.status === 'vencido') return 1;
-        return a.billing.diffDays - b.billing.diffDays;
-      });
-  }, [activeClients, paidCycleInfo, recibos]);
+    const list = cierreData?.usuariosPendientes || [];
+    if (!searchMoroso.trim()) return list;
+    const q = searchMoroso.toLowerCase();
+    return list.filter(u =>
+      (u.nombre || '').toLowerCase().includes(q) ||
+      (u.placa || '').toLowerCase().includes(q) ||
+      (u.correo || '').toLowerCase().includes(q) ||
+      (u.celular || '').includes(q)
+    );
+  }, [cierreData?.usuariosPendientes, searchMoroso]);
 
-  const displayedUnpaidUsers = useMemo(() => {
-    if (morososFilter === 'vencidos') return unpaidUsers.filter(u => u.billing.status === 'vencido');
-    if (morososFilter === 'pendientes') return unpaidUsers.filter(u => u.billing.status === 'pendiente');
-    return unpaidUsers;
-  }, [unpaidUsers, morososFilter]);
+  const totalPorCobrarUnpaid = cierreData?.totalPorCobrar || 0;
 
-  const totalPorCobrarUnpaid = useMemo(() => {
-    return unpaidUsers.reduce((sum, u) => sum + Number(u.valor_tarifa || 0), 0);
-  }, [unpaidUsers]);
+  function getUserBadge(user) {
+    if (!user.fecha_inicio) return { text: 'Cobro pendiente', isOverdue: false };
+    const billingDay = new Date(user.fecha_inicio).getDate();
+    const today = new Date();
+    const todayDay = today.getDate();
+
+    if (todayDay === billingDay) {
+      return { text: 'Corte hoy', isOverdue: true };
+    }
+    if (todayDay > billingDay) {
+      return { text: `Vencido (día ${billingDay})`, isOverdue: true };
+    }
+    return { text: `Cobro pendiente (corte día ${billingDay})`, isOverdue: false };
+  }
 
   return (
     <div className="page-enter">
@@ -242,28 +254,75 @@ export default function RecibosAdmin() {
       </div>
 
       <div className="page-body">
-        {/* Filtros */}
-        <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap', alignItems: 'flex-end' }}>
-          <div className="form-group" style={{ marginBottom: 0 }}><label>Desde</label><input type="date" className="form-input" value={startDate} onChange={e => setStartDate(e.target.value)} /></div>
-          <div className="form-group" style={{ marginBottom: 0 }}><label>Hasta</label><input type="date" className="form-input" value={endDate} onChange={e => setEndDate(e.target.value)} /></div>
-          <button
-            type="button"
-            className="btn btn-ghost btn-sm"
-            onClick={() => { setStartDate(ADMIN_CYCLE.startDate); setEndDate(ADMIN_CYCLE.endDate); }}
-            style={{ height: 38 }}
-          >
-            Ciclo admin (12 al 11)
-          </button>
-          <button
-            type="button"
-            className="btn btn-ghost btn-sm"
-            onClick={() => { setStartDate(''); setEndDate(''); }}
-            style={{ height: 38 }}
-          >
-            Ver todos
-          </button>
-          <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, paddingBottom: 9, marginLeft: 'auto' }}><input type="checkbox" checked={includeClosed} onChange={e => setIncludeClosed(e.target.checked)} /> Incluir meses cerrados</label>
+        {/* Selector de Ciclo Contable y Rango de Fechas */}
+        <div className="card" style={{ marginBottom: 16 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 10, marginBottom: 12 }}>
+            <div>
+              <h3 className="card-title" style={{ margin: 0 }}>Período Contable de Recibos</h3>
+              <p className="card-subtitle" style={{ margin: '4px 0 0' }}>
+                Ciclo mensual del 12 al 11 · Sincronizado con el balance y cierre de caja
+              </p>
+            </div>
+
+            {/* Accesos rápidos de ciclos contables */}
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm"
+                style={{ fontSize: 12, padding: '4px 10px' }}
+                onClick={() => handleSelectCycle(getPreviousAdminClosingPeriod(startDate || new Date()))}
+                title="Ver ciclo contable anterior (12 al 11)"
+              >
+                <ChevronLeft size={14} /> Ciclo anterior
+              </button>
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm"
+                style={{ fontSize: 12, padding: '4px 10px', borderColor: 'rgba(22,199,83,0.4)', color: 'var(--accent-green)' }}
+                onClick={() => handleSelectCycle(ADMIN_CYCLE)}
+                title="Volver al ciclo actual"
+              >
+                <Calendar size={14} /> Ciclo actual (12 al 11)
+              </button>
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm"
+                style={{ fontSize: 12, padding: '4px 10px' }}
+                onClick={() => handleSelectCycle(getNextAdminClosingPeriod(startDate || new Date()))}
+                title="Ver siguiente ciclo"
+              >
+                Ciclo siguiente <ChevronRight size={14} />
+              </button>
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm"
+                style={{ fontSize: 12, padding: '4px 10px' }}
+                onClick={handleVerTodos}
+                title="Ver todos los recibos sin límite de fecha"
+              >
+                Ver todos
+              </button>
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', gap: 10, alignItems: 'flex-end', flexWrap: 'wrap' }}>
+            <div className="form-group" style={{ marginBottom: 0, minWidth: 150 }}>
+              <label>Desde</label>
+              <input type="date" className="form-input" value={startDate} onChange={e => setStartDate(e.target.value)} />
+            </div>
+            <div className="form-group" style={{ marginBottom: 0, minWidth: 150 }}>
+              <label>Hasta</label>
+              <input type="date" className="form-input" value={endDate} onChange={e => setEndDate(e.target.value)} />
+            </div>
+            {startDate && endDate && (
+              <span style={{ fontSize: 12, color: 'var(--text-secondary)', paddingBottom: 10 }}>
+                Mostrando recibos y clientes del <strong>{startDate}</strong> al <strong>{endDate}</strong>
+              </span>
+            )}
+          </div>
         </div>
+
+        {/* Botones de filtro de recibos */}
         <div style={{ display: 'flex', gap: 8, marginBottom: 20, flexWrap: 'wrap' }}>
           {[
             { key: 'en_revision', label: '⏳ En revisión', count: counts.en_revision },
@@ -277,104 +336,128 @@ export default function RecibosAdmin() {
           ))}
         </div>
 
-        <div className="card" style={{ marginBottom: 20, borderColor: unpaidUsers.length ? 'rgba(239, 68, 68, 0.4)' : undefined }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8, flexWrap: 'wrap', gap: 10 }}>
-            <div>
-              <h3 className="card-title" style={{ margin: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
-                <Users size={18} color="var(--accent-red)" />
-                Estado de Cobros del Ciclo ({unpaidUsers.length} clientes con pago pendiente)
-              </h3>
-              <p style={{ margin: '4px 0 0', fontSize: 12, color: 'var(--text-secondary)' }}>
-                Clientes que no han registrado comprobante para este ciclo · Cartera total por recaudar: <strong style={{ color: 'var(--accent-yellow)' }}>${totalPorCobrarUnpaid.toLocaleString('es-CO')}</strong>
-              </p>
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-              <button
-                type="button"
-                className="btn btn-ghost btn-sm"
-                style={{ fontSize: 12, color: '#25D366', borderColor: 'rgba(37, 211, 102, 0.4)', padding: '5px 12px' }}
-                onClick={handleDispararBarrido}
-                disabled={runningSweep}
-                title="Ejecutar barrido automático de Cloudflare para notificar morosos"
-              >
-                {runningSweep ? <span className="spinner" style={{ width: 12, height: 12, borderWidth: 2 }} /> : <Send size={13} />}
-                Barrido Automático WhatsApp
-              </button>
-            </div>
-          </div>
-
-          {unpaidUsers.length ? (
-            <div style={{ display: 'grid', gap: 8, maxHeight: 350, overflowY: 'auto', marginTop: 10 }}>
-              {displayedUnpaidUsers.map(user => (
-                <div
-                  key={user.id}
-                  style={{
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: 'center',
-                    padding: '8px 12px',
-                    borderRadius: 8,
-                    background: 'var(--bg-secondary)',
-                    border: user.billing.status === 'vencido' ? '1px solid rgba(239, 68, 68, 0.35)' : '1px solid var(--border)'
-                  }}
-                >
-                  <div>
-                    <span style={{ fontWeight: 600, fontSize: 13 }}>{user.nombre}</span>
-                    <span style={{ color: 'var(--text-muted)', marginLeft: 8, fontSize: 12 }}>
-                      {user.placa_carro || user.placa_moto || user.placa || ''} {user.tipo_vehiculo ? `· ${user.tipo_vehiculo}` : ''}
-                    </span>
-                    <span style={{ color: 'var(--accent-yellow)', marginLeft: 8, fontSize: 12, fontWeight: 700 }}>
-                      ${Number(user.valor_tarifa || 0).toLocaleString('es-CO')}
-                    </span>
-                    <span style={{ color: 'var(--text-secondary)', marginLeft: 8, fontSize: 11 }}>
-                      · Corte día {user.billing.billingDay} de cada mes
-                    </span>
-                  </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <span
-                      className={`badge ${user.billing.status === 'vencido' ? 'badge-rejected' : 'badge-review'}`}
-                      style={{ fontSize: 11 }}
-                    >
-                      {user.billing.badge}
-                    </span>
-                    {(user.celular || user.telefono) && (
-                      <a
-                        href={buildWhatsAppLink(user)}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="btn btn-sm"
-                        style={{
-                          background: 'rgba(37, 211, 102, 0.15)',
-                          color: '#25D366',
-                          border: '1px solid rgba(37, 211, 102, 0.35)',
-                          padding: '3px 8px',
-                          fontSize: 11,
-                          display: 'inline-flex',
-                          alignItems: 'center',
-                          gap: 4,
-                          textDecoration: 'none'
-                        }}
-                        title={`Abrir WhatsApp para recordar pago a ${user.nombre}`}
-                      >
-                        <MessageSquare size={12} /> WhatsApp
-                      </a>
-                    )}
-                  </div>
+        {/* Tarjeta de Clientes con Pago Pendiente en este ciclo */}
+        {startDate && endDate && (
+          <div className="card" style={{ marginBottom: 20, borderColor: (cierreData?.usuariosPendientes?.length || 0) > 0 ? 'rgba(239, 68, 68, 0.4)' : undefined }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8, flexWrap: 'wrap', gap: 10 }}>
+              <div>
+                <h3 className="card-title" style={{ margin: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <Users size={18} color="var(--accent-red)" />
+                  Estado de Cobros del Ciclo ({cierreData?.usuariosPendientes?.length || 0} clientes con cobro pendiente)
+                </h3>
+                <p style={{ margin: '4px 0 0', fontSize: 12, color: 'var(--text-secondary)' }}>
+                  Clientes activos sin comprobante registrado entre {startDate} y {endDate} · Cartera por recaudar: <strong style={{ color: 'var(--accent-yellow)' }}>${totalPorCobrarUnpaid.toLocaleString('es-CO')}</strong>
+                </p>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                <div style={{ position: 'relative', width: 180 }}>
+                  <Search size={14} color="var(--text-muted)" style={{ position: 'absolute', left: 10, top: 10 }} />
+                  <input
+                    type="text"
+                    className="form-input"
+                    placeholder="Buscar cliente..."
+                    value={searchMoroso}
+                    onChange={e => setSearchMoroso(e.target.value)}
+                    style={{ paddingLeft: 30, fontSize: 12, height: 32 }}
+                  />
                 </div>
-              ))}
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-sm"
+                  style={{ fontSize: 12, color: '#25D366', borderColor: 'rgba(37, 211, 102, 0.4)', padding: '5px 12px' }}
+                  onClick={handleDispararBarrido}
+                  disabled={runningSweep}
+                  title="Ejecutar barrido automático de Cloudflare para notificar morosos"
+                >
+                  {runningSweep ? <span className="spinner" style={{ width: 12, height: 12, borderWidth: 2 }} /> : <Send size={13} />}
+                  Barrido WhatsApp
+                </button>
+              </div>
             </div>
-          ) : (
-            <p style={{ fontSize: 13, color: 'var(--accent-green)', margin: '10px 0 0' }}>✓ Todos los usuarios se encuentran al día con sus pagos en este ciclo.</p>
-          )}
-        </div>
 
+            {cierreLoading ? (
+              <div style={{ textAlign: 'center', padding: 20 }}><div className="spinner" style={{ margin: '0 auto', width: 20, height: 20 }} /></div>
+            ) : unpaidUsers.length ? (
+              <div style={{ display: 'grid', gap: 8, maxHeight: 350, overflowY: 'auto', marginTop: 10 }}>
+                {unpaidUsers.map(user => {
+                  const badgeInfo = getUserBadge(user);
+                  return (
+                    <div
+                      key={user.id}
+                      style={{
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        padding: '8px 12px',
+                        borderRadius: 8,
+                        background: 'var(--bg-secondary)',
+                        border: badgeInfo.isOverdue ? '1px solid rgba(239, 68, 68, 0.35)' : '1px solid var(--border)'
+                      }}
+                    >
+                      <div>
+                        <span style={{ fontWeight: 600, fontSize: 13 }}>{user.nombre}</span>
+                        <span style={{ color: 'var(--text-muted)', marginLeft: 8, fontSize: 12 }}>
+                          {user.placa ? `${user.placa} · ` : ''}{user.tipo_vehiculo || 'Mensualidad'}
+                        </span>
+                        <span style={{ color: 'var(--accent-yellow)', marginLeft: 8, fontSize: 12, fontWeight: 700 }}>
+                          ${Number(user.valor_tarifa || 0).toLocaleString('es-CO')}
+                        </span>
+                        {user.fecha_inicio && (
+                          <span style={{ color: 'var(--text-secondary)', marginLeft: 8, fontSize: 11 }}>
+                            · Corte día {new Date(user.fecha_inicio).getDate()} de cada mes
+                          </span>
+                        )}
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <span
+                          className={`badge ${badgeInfo.isOverdue ? 'badge-rejected' : 'badge-review'}`}
+                          style={{ fontSize: 11 }}
+                        >
+                          {badgeInfo.text}
+                        </span>
+                        {(user.celular || user.telefono) && (
+                          <a
+                            href={buildWhatsAppLink(user)}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="btn btn-sm"
+                            style={{
+                              background: 'rgba(37, 211, 102, 0.15)',
+                              color: '#25D366',
+                              border: '1px solid rgba(37, 211, 102, 0.35)',
+                              padding: '3px 8px',
+                              fontSize: 11,
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: 4,
+                              textDecoration: 'none'
+                            }}
+                            title={`Abrir WhatsApp para recordar pago a ${user.nombre}`}
+                          >
+                            <MessageSquare size={12} /> WhatsApp
+                          </a>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <p style={{ fontSize: 13, color: 'var(--accent-green)', margin: '10px 0 0' }}>
+                ✓ Todos los clientes se encuentran al día con sus pagos en este ciclo ({startDate} al {endDate}).
+              </p>
+            )}
+          </div>
+        )}
+
+        {/* Cuadrícula de Recibos */}
         {loading ? (
           <div style={{ textAlign: 'center', padding: 60 }}><div className="spinner" style={{ margin: '0 auto' }} /></div>
         ) : filtered.length === 0 ? (
           <div className="empty-state">
             <Receipt size={48} />
             <h3>Sin recibos</h3>
-            <p>No hay recibos en esta categoría</p>
+            <p>No hay recibos en esta categoría para el rango seleccionado</p>
           </div>
         ) : (
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(320px,1fr))', gap: 16 }}>

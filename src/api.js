@@ -11,7 +11,7 @@ const API_URL = (typeof import.meta !== 'undefined' && import.meta.env?.VITE_API
 
 // Configuración de caché
 const READ_CACHE_TTL = 2000; // Solo 2 segundos para deduplicar componentes que se montan al mismo tiempo
-const API_TIMEOUT_MS = 30000; // 30s de timeout para prevenir cortes en cold starts
+const API_TIMEOUT_MS = 60000; // 60s de timeout para soportar cold starts de servidores en la nube
 
 const readCache = new Map();
 const pendingReads = new Map();

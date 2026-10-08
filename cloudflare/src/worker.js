@@ -200,6 +200,7 @@ async function enviarMensajeWhatsApp(env, celular, mensajeTexto, variablesPlanti
         },
         body: JSON.stringify({
           number: cleanNumber,
+          text: mensajeTexto,
           options: { delay: 1200, presence: 'composing' },
           textMessage: { text: mensajeTexto }
         })

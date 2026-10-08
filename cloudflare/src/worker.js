@@ -134,8 +134,39 @@ function calcularEstadoMoraUsuario(usuario, userReceipts = [], refDate = new Dat
 }
 
 // ============================================================
-// SERVICIO DE WHATSAPP (Meta Cloud API o Evolution API)
+// SERVICIO DE WHATSAPP (Evolution API vía Código QR o Meta Cloud API)
 // ============================================================
+
+async function getWhatsAppConfig(env) {
+  let provider = env.WHATSAPP_PROVIDER || 'evolution';
+  let evoUrl = env.WHATSAPP_EVOLUTION_URL || '';
+  let evoApiKey = env.WHATSAPP_EVOLUTION_APIKEY || '';
+  let evoInstance = env.WHATSAPP_EVOLUTION_INSTANCE || 'goparking';
+
+  // Buscar sobreescritura dinámica en la tabla config de D1
+  try {
+    const { results } = await env.DB.prepare(
+      "SELECT clave, valor FROM config WHERE clave IN ('whatsapp_provider', 'whatsapp_evolution_url', 'whatsapp_evolution_apikey', 'whatsapp_evolution_instance')"
+    ).all();
+    if (results && results.length > 0) {
+      results.forEach(row => {
+        if (row.clave === 'whatsapp_provider' && row.valor) provider = row.valor;
+        if (row.clave === 'whatsapp_evolution_url' && row.valor) evoUrl = row.valor;
+        if (row.clave === 'whatsapp_evolution_apikey' && row.valor) evoApiKey = row.valor;
+        if (row.clave === 'whatsapp_evolution_instance' && row.valor) evoInstance = row.valor;
+      });
+    }
+  } catch (e) {
+    console.error('Error al leer config de WhatsApp en D1:', e);
+  }
+
+  return {
+    provider,
+    evolutionUrl: evoUrl,
+    evolutionApiKey: evoApiKey,
+    evolutionInstance: evoInstance
+  };
+}
 
 async function enviarMensajeWhatsApp(env, celular, mensajeTexto, variablesPlantilla = []) {
   if (!celular) return { success: false, error: 'Sin número celular' };
@@ -143,18 +174,53 @@ async function enviarMensajeWhatsApp(env, celular, mensajeTexto, variablesPlanti
   // Limpiar y formatear a E.164 (ej. 573001234567 para Colombia)
   let cleanNumber = String(celular).replace(/\D/g, '');
   if (cleanNumber.length === 10 && cleanNumber.startsWith('3')) {
-    cleanNumber = '57' + cleanNumber; // Añadir código país Colombia si falta
+    cleanNumber = '57' + cleanNumber; // Código Colombia
   }
 
-  if (env.WHATSAPP_PROVIDER === 'meta') {
+  const cfg = await getWhatsAppConfig(env);
+
+  // OPCIÓN 1: Evolution API (Vinculación con tu propio número vía Código QR)
+  if (cfg.provider === 'evolution') {
+    if (!cfg.evolutionUrl) {
+      return {
+        success: false,
+        error: 'URL de Evolution API no configurada. Ve a WhatsApp en el panel para ingresar tu servidor.'
+      };
+    }
+
+    const cleanBaseUrl = cfg.evolutionUrl.replace(/\/$/, '');
+    const url = `${cleanBaseUrl}/message/sendText/${cfg.evolutionInstance}`;
+
+    try {
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'apikey': cfg.evolutionApiKey || '',
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          number: cleanNumber,
+          options: { delay: 1200, presence: 'composing' },
+          textMessage: { text: mensajeTexto }
+        })
+      });
+
+      const resData = await res.json().catch(() => ({}));
+      const ok = res.ok && !resData?.error;
+      const errorMsg = !ok ? (resData?.response?.message || resData?.message || resData?.error || 'Error al enviar por Evolution API') : null;
+      return { success: ok, data: resData, error: errorMsg };
+    } catch (err) {
+      return { success: false, error: 'Error de conexión con Evolution API: ' + err.message };
+    }
+  }
+
+  // OPCIÓN 2: Meta WhatsApp Cloud API (Fallback oficial)
+  if (cfg.provider === 'meta') {
     if (!env.WHATSAPP_PHONE_NUMBER_ID || !env.WHATSAPP_ACCESS_TOKEN) {
-      console.warn('Meta WhatsApp no configurado (falta PHONE_NUMBER_ID o ACCESS_TOKEN)');
       return { success: false, error: 'Credenciales Meta WhatsApp pendientes' };
     }
 
     const url = `https://graph.facebook.com/v20.0/${env.WHATSAPP_PHONE_NUMBER_ID}/messages`;
-    
-    // Si hay plantilla configurada, enviar con plantilla oficial
     let bodyPayload = {};
     if (env.WHATSAPP_TEMPLATE_NAME && variablesPlantilla.length > 0) {
       bodyPayload = {
@@ -173,7 +239,6 @@ async function enviarMensajeWhatsApp(env, celular, mensajeTexto, variablesPlanti
         }
       };
     } else {
-      // Mensaje de texto libre directo
       bodyPayload = {
         messaging_product: 'whatsapp',
         to: cleanNumber,
@@ -189,29 +254,6 @@ async function enviarMensajeWhatsApp(env, celular, mensajeTexto, variablesPlanti
         'Content-Type': 'application/json'
       },
       body: JSON.stringify(bodyPayload)
-    });
-
-    const resData = await res.json();
-    return { success: res.ok, data: resData, error: res.ok ? null : JSON.stringify(resData) };
-  }
-
-  if (env.WHATSAPP_PROVIDER === 'evolution') {
-    if (!env.WHATSAPP_EVOLUTION_URL) {
-      return { success: false, error: 'URL Evolution API pendiente' };
-    }
-
-    const url = `${env.WHATSAPP_EVOLUTION_URL.replace(/\/$/, '')}/message/sendText/${env.WHATSAPP_EVOLUTION_INSTANCE || 'goparking'}`;
-    const res = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'apikey': env.WHATSAPP_EVOLUTION_APIKEY || '',
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        number: cleanNumber,
-        options: { delay: 1200, presence: 'composing' },
-        textMessage: { text: mensajeTexto }
-      })
     });
 
     const resData = await res.json();
@@ -1002,6 +1044,141 @@ export default {
       if (action === 'eliminarCuentaPago') {
         await env.DB.prepare("UPDATE cuentas_pago SET activo = 0 WHERE id = ?").bind(data.id).run();
         return json({ success: true });
+      }
+
+      // ----------------------------------------------------
+      // GESTIÓN DE WHATSAPP (EVOLUTION API / CÓDIGO QR)
+      // ----------------------------------------------------
+      if (action === 'getWhatsAppConfig' || path === '/api/whatsapp/config') {
+        const cfg = await getWhatsAppConfig(env);
+        let connectionState = 'desconectado';
+        let instanceInfo = null;
+
+        if (cfg.evolutionUrl) {
+          try {
+            const cleanBaseUrl = cfg.evolutionUrl.replace(/\/$/, '');
+            const checkUrl = `${cleanBaseUrl}/instance/connectionState/${cfg.evolutionInstance}`;
+            const checkRes = await fetch(checkUrl, {
+              headers: { 'apikey': cfg.evolutionApiKey || '' }
+            });
+            if (checkRes.ok) {
+              const checkJson = await checkRes.json();
+              const state = checkJson?.instance?.state || checkJson?.state;
+              if (state === 'open') {
+                connectionState = 'conectado';
+              } else if (state === 'connecting') {
+                connectionState = 'conectando';
+              } else {
+                connectionState = 'desconectado';
+              }
+              instanceInfo = checkJson;
+            }
+          } catch (e) {
+            console.warn('Error al verificar estado de Evolution API:', e);
+          }
+        }
+
+        return json({
+          success: true,
+          data: {
+            provider: cfg.provider,
+            evolutionUrl: cfg.evolutionUrl,
+            evolutionApiKey: cfg.evolutionApiKey ? '••••••••' + cfg.evolutionApiKey.slice(-4) : '',
+            evolutionInstance: cfg.evolutionInstance,
+            hasApiKey: Boolean(cfg.evolutionApiKey),
+            isConfigured: Boolean(cfg.evolutionUrl),
+            connectionState,
+            instanceInfo
+          }
+        });
+      }
+
+      if (action === 'guardarWhatsAppConfig' || path === '/api/whatsapp/guardar-config') {
+        const evoUrl = (data.evolutionUrl || '').trim();
+        const evoKey = (data.evolutionApiKey || '').trim();
+        const evoInst = (data.evolutionInstance || 'goparking').trim();
+
+        await env.DB.prepare("INSERT OR REPLACE INTO config (clave, valor) VALUES ('whatsapp_provider', 'evolution')").run();
+        if (evoUrl) {
+          await env.DB.prepare("INSERT OR REPLACE INTO config (clave, valor) VALUES ('whatsapp_evolution_url', ?)").bind(evoUrl).run();
+        }
+        if (evoKey && !evoKey.startsWith('••••')) {
+          await env.DB.prepare("INSERT OR REPLACE INTO config (clave, valor) VALUES ('whatsapp_evolution_apikey', ?)").bind(evoKey).run();
+        }
+        if (evoInst) {
+          await env.DB.prepare("INSERT OR REPLACE INTO config (clave, valor) VALUES ('whatsapp_evolution_instance', ?)").bind(evoInst).run();
+        }
+
+        return json({ success: true, message: 'Configuración de WhatsApp guardada exitosamente' });
+      }
+
+      if (action === 'getWhatsAppQR' || path === '/api/whatsapp/qr') {
+        const cfg = await getWhatsAppConfig(env);
+        if (!cfg.evolutionUrl) {
+          return json({ success: false, error: 'Configura la URL de Evolution API primero en los ajustes' });
+        }
+
+        const cleanBaseUrl = cfg.evolutionUrl.replace(/\/$/, '');
+        let connectUrl = `${cleanBaseUrl}/instance/connect/${cfg.evolutionInstance}`;
+        let connectRes = await fetch(connectUrl, {
+          headers: { 'apikey': cfg.evolutionApiKey || '' }
+        });
+
+        // Si la instancia no existe aún (404), la creamos primero
+        if (connectRes.status === 404) {
+          const createUrl = `${cleanBaseUrl}/instance/create`;
+          await fetch(createUrl, {
+            method: 'POST',
+            headers: {
+              'apikey': cfg.evolutionApiKey || '',
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+              instanceName: cfg.evolutionInstance,
+              qrcode: true,
+              integration: 'WHATSAPP-BAILEYS'
+            })
+          });
+          connectRes = await fetch(connectUrl, {
+            headers: { 'apikey': cfg.evolutionApiKey || '' }
+          });
+        }
+
+        const resData = await connectRes.json().catch(() => ({}));
+        const qrBase64 = resData.base64 || resData.qrcode?.base64 || resData.code;
+        return json({
+          success: Boolean(qrBase64),
+          data: {
+            base64: qrBase64,
+            pairingCode: resData.pairingCode || null,
+            count: resData.count || 1,
+            state: resData.state || null
+          },
+          error: qrBase64 ? null : (resData.message || 'No se pudo generar el código QR. Verifica si la instancia ya está conectada o la clave API.')
+        });
+      }
+
+      if (action === 'desconectarWhatsApp' || path === '/api/whatsapp/logout') {
+        const cfg = await getWhatsAppConfig(env);
+        if (!cfg.evolutionUrl) {
+          return json({ success: false, error: 'Evolution API no configurada' });
+        }
+
+        const cleanBaseUrl = cfg.evolutionUrl.replace(/\/$/, '');
+        const logoutUrl = `${cleanBaseUrl}/instance/logout/${cfg.evolutionInstance}`;
+        await fetch(logoutUrl, {
+          method: 'DELETE',
+          headers: { 'apikey': cfg.evolutionApiKey || '' }
+        }).catch(() => {});
+
+        return json({ success: true, message: 'WhatsApp desvinculado con éxito' });
+      }
+
+      if (action === 'enviarWhatsAppPrueba' || path === '/api/whatsapp/test') {
+        const celular = data.celular;
+        const mensaje = data.mensaje || '¡Hola! Este es un mensaje de prueba desde GoParking con WhatsApp conectado vía Código QR 🚗✅';
+        const resEnvio = await enviarMensajeWhatsApp(env, celular, mensaje);
+        return json(resEnvio);
       }
 
       // ----------------------------------------------------

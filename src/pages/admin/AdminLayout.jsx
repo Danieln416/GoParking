@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Outlet, NavLink, useNavigate } from 'react-router-dom';
-import { Car, LayoutDashboard, Users, Receipt, MapPin, Calculator, MessageSquare, CreditCard, RotateCw, LogOut, Menu, X } from 'lucide-react';
+import { Car, LayoutDashboard, Users, Receipt, MapPin, Calculator, MessageSquare, CreditCard, QrCode, RotateCw, LogOut, Menu, X } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext.jsx';
 import { apiClearCache } from '../../api.js';
 
@@ -61,6 +61,11 @@ export default function AdminLayout() {
           <NavLink to="/admin/opciones-pago" className={({ isActive }) => `sidebar-link ${isActive ? 'active' : ''}`}>
             <CreditCard className="nav-icon" />
             Opciones de Pago
+          </NavLink>
+
+          <NavLink to="/admin/whatsapp" className={({ isActive }) => `sidebar-link ${isActive ? 'active' : ''}`}>
+            <QrCode className="nav-icon" />
+            WhatsApp QR
           </NavLink>
 
           <NavLink to="/admin/cierre-mes" className={({ isActive }) => `sidebar-link ${isActive ? 'active' : ''}`}>

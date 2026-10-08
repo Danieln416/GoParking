@@ -31,8 +31,8 @@ crons = ["0 13 * * *"]
 # VARIABLES DE ENTORNO
 # ============================================================
 [vars]
-# Proveedor de WhatsApp: 'meta' (WhatsApp Cloud API Oficial) o 'evolution' (Evolution API Open Source)
-WHATSAPP_PROVIDER = "meta"
+# Proveedor de WhatsApp: 'evolution' (Conexión por Código QR / WhatsApp Web) o 'meta' (WhatsApp Cloud API)
+WHATSAPP_PROVIDER = "evolution"
 
 # Configuración Meta WhatsApp Cloud API (1.000 conversaciones gratis/mes)
 WHATSAPP_PHONE_NUMBER_ID = ""

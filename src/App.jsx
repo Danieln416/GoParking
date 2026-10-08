@@ -21,6 +21,7 @@ import GestionPuestos from './pages/admin/GestionPuestos.jsx';
 import CierreMes from './pages/admin/CierreMes.jsx';
 import SolicitudesAdmin from './pages/admin/SolicitudesAdmin.jsx';
 import OpcionesPago from './pages/admin/OpcionesPago.jsx';
+import WhatsAppAdmin from './pages/admin/WhatsAppAdmin.jsx';
 
 function ProtectedRoute({ children, allowedRole }) {
   const { user, loading } = useAuth();
@@ -56,6 +57,7 @@ export default function App() {
           <Route path="recibos" element={<RecibosAdmin />} />
           <Route path="puestos" element={<GestionPuestos />} />
           <Route path="opciones-pago" element={<OpcionesPago />} />
+          <Route path="whatsapp" element={<WhatsAppAdmin />} />
           <Route path="cierre-mes" element={<CierreMes />} />
           <Route path="solicitudes" element={<SolicitudesAdmin />} />
         </Route>

@@ -31,7 +31,7 @@ crons = ["0 13 * * *"]
 # VARIABLES DE ENTORNO
 # ============================================================
 [vars]
-WHATSAPP_PROVIDER = "meta"
+WHATSAPP_PROVIDER = "evolution"
 WHATSAPP_PHONE_NUMBER_ID = ""
 WHATSAPP_ACCESS_TOKEN = ""
 WHATSAPP_TEMPLATE_NAME = "recordatorio_mora"

@@ -541,8 +541,29 @@ export const apiEliminarCuentaPago = (id) => {
 };
 
 // ============================================================
-// NOTIFICACIONES WHATSAPP (Automático en Cloudflare)
+// NOTIFICACIONES WHATSAPP (Código QR / Evolution API)
 // ============================================================
+
+export const apiGetWhatsAppConfig = (options = {}) =>
+  callAPI('getWhatsAppConfig', {}, options);
+
+export const apiGuardarWhatsAppConfig = (data) =>
+  callAPI('guardarWhatsAppConfig', data).then(res => {
+    if (res.success) invalidateReads(['getWhatsAppConfig']);
+    return res;
+  });
+
+export const apiGetWhatsAppQR = () =>
+  callAPI('getWhatsAppQR');
+
+export const apiDesconectarWhatsApp = () =>
+  callAPI('desconectarWhatsApp').then(res => {
+    if (res.success) invalidateReads(['getWhatsAppConfig']);
+    return res;
+  });
+
+export const apiEnviarWhatsAppTest = (celular, mensaje) =>
+  callAPI('enviarWhatsAppPrueba', { celular, mensaje });
 
 export const apiDispararWhatsAppMora = () =>
   callAPI('ejecutarNotificacionesMora');

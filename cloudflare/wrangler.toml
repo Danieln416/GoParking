@@ -40,7 +40,7 @@ WHATSAPP_ACCESS_TOKEN = ""
 WHATSAPP_TEMPLATE_NAME = "recordatorio_mora"
 
 # Configuración alternativa: Evolution API (WhatsApp con tu propio número vía QR)
-WHATSAPP_EVOLUTION_URL = ""
+WHATSAPP_EVOLUTION_URL = "https://goparking-whatsapp.onrender.com"
 WHATSAPP_EVOLUTION_APIKEY = ""
 WHATSAPP_EVOLUTION_INSTANCE = "goparking"
 

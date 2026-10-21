@@ -748,6 +748,56 @@ export default {
         return json({ success: true });
       }
 
+      if (action === 'actualizarFechasRecibo') {
+        const { reciboId, fechaInicio, fechaFin, mes, anio, justificacion } = data;
+        if (!reciboId) {
+          return json({ success: false, error: 'ID de recibo requerido' });
+        }
+        if (!justificacion || !justificacion.trim()) {
+          return json({ success: false, error: 'Debes ingresar una justificación obligatoria para cambiar las fechas de facturación' });
+        }
+
+        const fInicio = normalizarFecha(fechaInicio);
+        let fFin = normalizarFecha(fechaFin);
+        if (!fFin && fInicio) {
+          const d = parseDate(fInicio);
+          fFin = formatDate(new Date(d.getFullYear(), d.getMonth() + 1, d.getDate() - 1));
+        }
+
+        const recibo = await env.DB.prepare("SELECT * FROM recibos WHERE id = ?").bind(reciboId).first();
+        if (!recibo) {
+          return json({ success: false, error: 'Recibo no encontrado' });
+        }
+
+        const notaActualizacion = `📅 Período corregido por admin (${fInicio} al ${fFin}). Motivo: ${justificacion.trim()}`;
+        const nuevaAdminNota = recibo.admin_nota ? `${recibo.admin_nota} | ${notaActualizacion}` : notaActualizacion;
+
+        await env.DB.prepare(`
+          UPDATE recibos
+          SET fecha_inicio = ?, fecha_fin = ?, mes = ?, anio = ?, admin_nota = ?, justificacion_fechas = ?
+          WHERE id = ?
+        `).bind(
+          fInicio,
+          fFin,
+          mes || (fInicio ? parseDate(fInicio).getMonth() + 1 : recibo.mes),
+          anio || (fInicio ? parseDate(fInicio).getFullYear() : recibo.anio),
+          nuevaAdminNota,
+          justificacion.trim(),
+          reciboId
+        ).run();
+
+        return json({
+          success: true,
+          data: {
+            id: reciboId,
+            fecha_inicio: fInicio,
+            fecha_fin: fFin,
+            admin_nota: nuevaAdminNota,
+            justificacion_fechas: justificacion.trim()
+          }
+        });
+      }
+
       // ----------------------------------------------------
       // PUESTOS
       // ----------------------------------------------------
@@ -1012,16 +1062,30 @@ export default {
       if (action === 'guardarCuentaPago') {
         const id = data.id || generateId();
         let qrUrl = data.qr_url || '';
-        let r2Key = '';
+        let r2Key = data.r2_key || '';
 
-        if (data.qrBase64) {
-          r2Key = `qr/${id}.jpg`;
-          const binaryString = atob(data.qrBase64);
+        // Extraer base64 si viene en qrBase64, base64Data o en qr_url con data:
+        let rawBase64 = data.qrBase64 || data.base64Data;
+        if (!rawBase64 && typeof qrUrl === 'string' && qrUrl.startsWith('data:')) {
+          const parts = qrUrl.split(',');
+          rawBase64 = parts[1] || '';
+        }
+
+        if (rawBase64) {
+          let mimeType = data.mimeType || 'image/png';
+          if (typeof qrUrl === 'string' && qrUrl.startsWith('data:image/')) {
+            const m = qrUrl.match(/data:(image\/[a-zA-Z0-9+.-]+);base64/);
+            if (m) mimeType = m[1];
+          }
+          const ext = mimeType.includes('jpeg') || mimeType.includes('jpg') ? 'jpg' : (mimeType.includes('webp') ? 'webp' : 'png');
+          r2Key = `qr/${id}.${ext}`;
+
+          const binaryString = atob(rawBase64);
           const bytes = new Uint8Array(binaryString.length);
           for (let i = 0; i < binaryString.length; i++) {
             bytes[i] = binaryString.charCodeAt(i);
           }
-          await env.MEDIA_BUCKET.put(r2Key, bytes, { httpMetadata: { contentType: 'image/jpeg' } });
+          await env.MEDIA_BUCKET.put(r2Key, bytes, { httpMetadata: { contentType: mimeType } });
           const baseOrigin = env.MEDIA_BASE_URL || url.origin;
           qrUrl = `${baseOrigin}/media/${r2Key}`;
         }
@@ -1036,10 +1100,11 @@ export default {
             numero = excluded.numero,
             titular = excluded.titular,
             qr_url = coalesce(nullif(excluded.qr_url, ''), cuentas_pago.qr_url),
+            r2_key = coalesce(nullif(excluded.r2_key, ''), cuentas_pago.r2_key),
             instrucciones = excluded.instrucciones
         `).bind(id, data.nombre, data.entidad, data.tipo_cuenta || '', data.numero, data.titular || '', qrUrl, r2Key, data.instrucciones || '').run();
 
-        return json({ success: true, data: { id, qr_url: qrUrl } });
+        return json({ success: true, data: { id, qr_url: qrUrl, r2_key: r2Key } });
       }
 
       if (action === 'eliminarCuentaPago') {
@@ -1188,6 +1253,82 @@ export default {
       if (action === 'ejecutarNotificacionesMora' || path === '/api/whatsapp/enviar-mora') {
         const resultado = await ejecutarBarridoMorosos(env);
         return json(resultado);
+      }
+
+      // ----------------------------------------------------
+      // COBROS ADICIONALES (MULTAS Y COBROS EXTRAS)
+      // ----------------------------------------------------
+      if (action === 'getCobrosAdicionales' || path === '/api/cobros-adicionales') {
+        let query = "SELECT * FROM cobros_adicionales";
+        let params = [];
+        if (data.userId && data.userId !== 'all') {
+          query += " WHERE usuario_id = ?";
+          params.push(data.userId);
+        }
+        query += " ORDER BY fecha DESC, fecha_creacion DESC";
+        const { results } = await env.DB.prepare(query).bind(...params).all();
+        return json({ success: true, data: results || [] });
+      }
+
+      if (action === 'crearCobroAdicional') {
+        const { usuarioId, tipo, concepto, justificacion, valor, fecha } = data;
+        if (!usuarioId) return json({ success: false, error: 'Selecciona un usuario' });
+        if (!concepto || !concepto.trim()) return json({ success: false, error: 'El concepto del cobro es obligatorio' });
+        if (!justificacion || !justificacion.trim()) return json({ success: false, error: 'La justificación es obligatoria' });
+        const numValor = Number(valor);
+        if (isNaN(numValor) || numValor <= 0) return json({ success: false, error: 'El valor debe ser mayor a 0' });
+
+        const usuario = await env.DB.prepare("SELECT id, nombre, correo FROM usuarios WHERE id = ?").bind(usuarioId).first();
+        if (!usuario) return json({ success: false, error: 'Usuario no encontrado' });
+
+        const id = generateId();
+        const hoyStr = fecha ? normalizarFecha(fecha) : new Date().toISOString().slice(0, 10);
+        const tipoFinal = tipo === 'multa' ? 'multa' : 'extra';
+
+        await env.DB.prepare(`
+          INSERT INTO cobros_adicionales (id, usuario_id, usuario_nombre, usuario_correo, tipo, concepto, justificacion, valor, fecha, estado)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pendiente')
+        `).bind(
+          id,
+          usuario.id,
+          usuario.nombre,
+          usuario.correo || '',
+          tipoFinal,
+          concepto.trim(),
+          justificacion.trim(),
+          numValor,
+          hoyStr
+        ).run();
+
+        return json({
+          success: true,
+          data: {
+            id,
+            usuario_id: usuario.id,
+            usuario_nombre: usuario.nombre,
+            tipo: tipoFinal,
+            concepto: concepto.trim(),
+            justificacion: justificacion.trim(),
+            valor: numValor,
+            fecha: hoyStr,
+            estado: 'pendiente'
+          }
+        });
+      }
+
+      if (action === 'actualizarEstadoCobroAdicional') {
+        const { id, estado } = data;
+        if (!id) return json({ success: false, error: 'ID requerido' });
+        const estadoFinal = estado === 'pagado' ? 'pagado' : (estado === 'anulado' ? 'anulado' : 'pendiente');
+        await env.DB.prepare("UPDATE cobros_adicionales SET estado = ? WHERE id = ?").bind(estadoFinal, id).run();
+        return json({ success: true, estado: estadoFinal });
+      }
+
+      if (action === 'eliminarCobroAdicional') {
+        const { id } = data;
+        if (!id) return json({ success: false, error: 'ID requerido' });
+        await env.DB.prepare("DELETE FROM cobros_adicionales WHERE id = ?").bind(id).run();
+        return json({ success: true });
       }
 
       return json({ success: false, error: `Acción '${action}' no reconocida` }, 404);

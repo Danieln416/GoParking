@@ -17,7 +17,7 @@ import {
   ChevronUp
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext.jsx';
-import { apiSubirRecibo, apiGetCuentasPago, apiGetRecibos } from '../../api.js';
+import { apiSubirRecibo, apiGetCuentasPago, apiGetRecibos, apiGetCobrosAdicionales } from '../../api.js';
 import {
   calcularFinPeriodoUsuario,
   calcularInicioPeriodoUsuario,
@@ -49,11 +49,11 @@ export default function SubirRecibo() {
   const [copiedId, setCopiedId] = useState(null);
   const [zoomQr, setZoomQr] = useState(null);
   const [showAllCuentas, setShowAllCuentas] = useState(false);
+  const [cobrosPendientes, setCobrosPendientes] = useState([]);
 
   const fileInputRef = useRef();
   const cameraInputRef = useRef();
   const isSubmittingRef = useRef(false);
-
 
   useEffect(() => {
     async function loadCuentas() {
@@ -80,6 +80,12 @@ export default function SubirRecibo() {
           setUserReceipts(res.data);
         }
       }).catch(err => console.error('Error al cargar recibos del usuario:', err));
+
+      apiGetCobrosAdicionales(user.id).then(res => {
+        if (res.success && Array.isArray(res.data)) {
+          setCobrosPendientes(res.data.filter(c => c.estado === 'pendiente'));
+        }
+      }).catch(err => console.error('Error al cargar cobros adicionales:', err));
     }
   }, [user?.id]);
 
@@ -356,6 +362,42 @@ export default function SubirRecibo() {
                   </p>
                 </div>
               </div>
+            </div>
+          )}
+
+          {/* Aviso de cobros adicionales o multas pendientes */}
+          {cobrosPendientes.length > 0 && (
+            <div
+              className="card"
+              style={{
+                marginBottom: 20,
+                border: '1px solid rgba(245, 158, 11, 0.4)',
+                background: 'rgba(245, 158, 11, 0.08)',
+                padding: '14px 16px'
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
+                <AlertCircle size={20} color="var(--accent-yellow)" />
+                <strong style={{ fontSize: 14, color: 'var(--accent-yellow)' }}>
+                  Aviso: Tienes {cobrosPendientes.length} cobro(s) o multa(s) pendiente(s)
+                </strong>
+              </div>
+              <p style={{ fontSize: 13, color: 'var(--text-secondary)', margin: '0 0 8px 0' }}>
+                Total adeudado en conceptos adicionales:{' '}
+                <strong style={{ color: 'var(--text-primary)' }}>
+                  ${cobrosPendientes.reduce((a, b) => a + Number(b.valor || 0), 0).toLocaleString('es-CO')} COP
+                </strong>.
+              </p>
+              <ul style={{ margin: 0, paddingLeft: 20, fontSize: 12, color: 'var(--text-secondary)' }}>
+                {cobrosPendientes.map(cp => (
+                  <li key={cp.id} style={{ marginBottom: 4 }}>
+                    <strong>{cp.tipo === 'multa' ? '🛑 Multa' : '➕ Cobro extra'} (${Number(cp.valor).toLocaleString('es-CO')} COP):</strong> {cp.concepto} - <em>Justificación: {cp.justificacion}</em>
+                  </li>
+                ))}
+              </ul>
+              <p style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 8, marginBottom: 0 }}>
+                💡 Si tu comprobante incluye el pago de alguna de estas multas o cobros extras, tenlo en cuenta en el valor transferido.
+              </p>
             </div>
           )}
 

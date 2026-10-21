@@ -268,6 +268,19 @@ export const apiRechazarRecibo = (id, nota = '') =>
     return result;
   });
 
+export const apiActualizarFechasRecibo = ({ reciboId, fechaInicio, fechaFin, mes, anio, justificacion }) =>
+  callAPI('actualizarFechasRecibo', {
+    reciboId,
+    fechaInicio,
+    fechaFin,
+    mes,
+    anio,
+    justificacion
+  }).then(result => {
+    if (result.success) invalidateReads(['getRecibos', 'getAdminResumen', 'getCierreMes']);
+    return result;
+  });
+
 export const apiSubirRecibo = (
   userId,
   userName,
@@ -511,14 +524,27 @@ export const apiGuardarCuentaPago = (data) => {
   const current = getLocalCuentasPago();
   const id = data.id || `cuenta-${Date.now()}`;
   const nuevaCuenta = { ...data, id, activo: data.activo !== undefined ? data.activo : true };
+  const cleanForLocal = { ...nuevaCuenta };
+  delete cleanForLocal.qrBase64;
+  delete cleanForLocal.base64Data;
+  if (cleanForLocal.qr_url && cleanForLocal.qr_url.startsWith('data:')) {
+    cleanForLocal.qr_url = '';
+  }
+
   const exists = current.some(c => String(c.id) === String(id));
   const updated = exists 
-    ? current.map(c => String(c.id) === String(id) ? nuevaCuenta : c)
-    : [...current, nuevaCuenta];
+    ? current.map(c => String(c.id) === String(id) ? cleanForLocal : c)
+    : [...current, cleanForLocal];
   setLocalCuentasPago(updated);
 
   return callAPI('guardarCuentaPago', nuevaCuenta).then(result => {
-    if (result.success) invalidateReads(['getCuentasPago']);
+    if (result.success) {
+      invalidateReads(['getCuentasPago']);
+      if (result.data?.qr_url) {
+        cleanForLocal.qr_url = result.data.qr_url;
+        setLocalCuentasPago(current.map(c => String(c.id) === String(id) ? cleanForLocal : c));
+      }
+    }
     return { success: true, data: result.data || nuevaCuenta };
   }).catch(() => {
     invalidateReads(['getCuentasPago']);
@@ -567,3 +593,28 @@ export const apiEnviarWhatsAppTest = (celular, mensaje) =>
 
 export const apiDispararWhatsAppMora = () =>
   callAPI('ejecutarNotificacionesMora');
+
+// ============================================================
+// COBROS ADICIONALES (MULTAS Y COBROS EXTRAS)
+// ============================================================
+
+export const apiGetCobrosAdicionales = (userId = 'all', options = {}) =>
+  callAPI('getCobrosAdicionales', { userId }, options);
+
+export const apiCrearCobroAdicional = (data) =>
+  callAPI('crearCobroAdicional', data).then(res => {
+    if (res.success) invalidateReads(['getCobrosAdicionales', 'getAdminResumen']);
+    return res;
+  });
+
+export const apiActualizarEstadoCobroAdicional = (id, estado) =>
+  callAPI('actualizarEstadoCobroAdicional', { id, estado }).then(res => {
+    if (res.success) invalidateReads(['getCobrosAdicionales', 'getAdminResumen']);
+    return res;
+  });
+
+export const apiEliminarCobroAdicional = (id) =>
+  callAPI('eliminarCobroAdicional', { id }).then(res => {
+    if (res.success) invalidateReads(['getCobrosAdicionales', 'getAdminResumen']);
+    return res;
+  });

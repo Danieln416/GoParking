@@ -16,7 +16,8 @@ import {
   Building2,
   Smartphone,
   Wallet,
-  X
+  X,
+  AlertTriangle
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext.jsx';
 import {
@@ -24,7 +25,8 @@ import {
   apiGetSolicitudes,
   apiGetPuestosUsuario,
   apiGetPuestos,
-  apiGetCuentasPago
+  apiGetCuentasPago,
+  apiGetCobrosAdicionales
 } from '../../api.js';
 import { Link } from 'react-router-dom';
 import { formatPeriodoLabel, formatDateLabel, getUserBillingInfo } from '../../utils/periodo.js';
@@ -388,6 +390,7 @@ export default function UserDashboard() {
   const { user } = useAuth();
 
   const [recibos, setRecibos] = useState([]);
+  const [cobrosAdicionales, setCobrosAdicionales] = useState([]);
   const [solicitudes, setSolicitudes] = useState([]);
   const [puestosAsignados, setPuestosAsignados] = useState([]);
   const [todosLosPuestos, setTodosLosPuestos] = useState([]);
@@ -411,16 +414,21 @@ export default function UserDashboard() {
         setMapError(false);
         setLoadingMapa(false);
 
-        const [r, s, p, allP, c] = await Promise.all([
+        const [r, s, p, allP, c, cobrosRes] = await Promise.all([
           apiGetRecibos(user.id),
           apiGetSolicitudes(user.id),
           apiGetPuestosUsuario(user.id),
           apiGetPuestos(),
-          apiGetCuentasPago()
+          apiGetCuentasPago(),
+          apiGetCobrosAdicionales(user.id)
         ]);
 
         if (r.success) {
           setRecibos(r.data || []);
+        }
+
+        if (cobrosRes && cobrosRes.success) {
+          setCobrosAdicionales(cobrosRes.data || []);
         }
 
         if (s.success) {
@@ -472,6 +480,9 @@ export default function UserDashboard() {
   )[0];
 
   const billingInfo = getUserBillingInfo(user?.fecha_inicio, new Date(), recibos);
+
+  const cobrosPendientes = cobrosAdicionales.filter(c => c.estado === 'pendiente');
+  const totalCobrosPendientes = cobrosPendientes.reduce((acc, c) => acc + (Number(c.valor) || 0), 0);
 
   const puestoCarro = puestosAsignados.find(
     puesto => normalizePuestoTipo(puesto.tipo) === 'carro'
@@ -614,6 +625,108 @@ export default function UserDashboard() {
                     onClick={() => setShowCuentasModal(true)}
                   >
                     <QrCode size={14} /> Ver cuentas y QR de pago
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Banner de Cobros Adicionales / Multas Pendientes */}
+        {cobrosPendientes.length > 0 && (
+          <div
+            className="card"
+            style={{
+              marginBottom: 24,
+              borderColor: 'rgba(239, 68, 68, 0.45)',
+              background: 'linear-gradient(135deg, rgba(239, 68, 68, 0.1) 0%, rgba(245, 158, 11, 0.05) 100%)'
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'flex-start', gap: 14 }}>
+              <div
+                style={{
+                  width: 44,
+                  height: 44,
+                  borderRadius: 10,
+                  background: 'rgba(239, 68, 68, 0.15)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  flexShrink: 0
+                }}
+              >
+                <AlertTriangle size={24} color="var(--accent-red)" />
+              </div>
+              <div style={{ flex: 1 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8, marginBottom: 6 }}>
+                  <h3 style={{ fontSize: 16, fontWeight: 700, margin: 0, color: 'var(--accent-red)' }}>
+                    Tienes {cobrosPendientes.length} cobro(s) adicional(es) o multa(s) pendiente(s)
+                  </h3>
+                  <span
+                    className="badge"
+                    style={{
+                      background: 'rgba(239,68,68,0.2)',
+                      color: 'var(--accent-red)',
+                      fontWeight: 700,
+                      fontSize: 13
+                    }}
+                  >
+                    Total pendiente: ${totalCobrosPendientes.toLocaleString('es-CO')} COP
+                  </span>
+                </div>
+                <p style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 12 }}>
+                  La administración ha registrado los siguientes conceptos pendientes de pago asociados a tu cuenta:
+                </p>
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 14 }}>
+                  {cobrosPendientes.map(item => (
+                    <div
+                      key={item.id}
+                      style={{
+                        background: 'rgba(0, 0, 0, 0.25)',
+                        border: '1px solid rgba(255, 255, 255, 0.08)',
+                        borderRadius: 8,
+                        padding: '10px 14px',
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'flex-start',
+                        flexWrap: 'wrap',
+                        gap: 10
+                      }}
+                    >
+                      <div style={{ flex: 1, minWidth: 200 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 3 }}>
+                          <span style={{ fontSize: 13, fontWeight: 700, color: item.tipo === 'multa' ? 'var(--accent-red)' : 'var(--accent-cyan)' }}>
+                            {item.tipo === 'multa' ? '🛑 Multa:' : '➕ Cobro Extra:'} {item.concepto}
+                          </span>
+                        </div>
+                        <p style={{ fontSize: 12, color: 'var(--text-secondary)', margin: '2px 0' }}>
+                          <strong>Justificación:</strong> {item.justificacion}
+                        </p>
+                        <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                          Fecha: {item.fecha || item.fecha_creacion?.slice(0, 10)}
+                        </span>
+                      </div>
+                      <div style={{ textAlign: 'right' }}>
+                        <span style={{ fontSize: 15, fontWeight: 800, color: 'var(--text-primary)' }}>
+                          ${Number(item.valor).toLocaleString('es-CO')} COP
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+                  <Link to="/usuario/subir-recibo" className="btn btn-primary btn-sm">
+                    <Upload size={14} /> Subir comprobante de pago
+                  </Link>
+                  <button
+                    type="button"
+                    className="btn btn-ghost btn-sm"
+                    style={{ borderColor: 'rgba(22,199,83,0.35)', color: 'var(--accent-green)' }}
+                    onClick={() => setShowCuentasModal(true)}
+                  >
+                    <QrCode size={14} /> Ver cuentas y QR
                   </button>
                 </div>
               </div>
@@ -1048,6 +1161,23 @@ export default function UserDashboard() {
               <a href={getReceiptViewerUrl(ultimoRecibo)} target="_blank" rel="noreferrer" className="btn btn-ghost btn-sm" style={{ marginTop: 10 }}>
                 <Receipt size={14} /> Ver recibo original
               </a>
+            )}
+
+            {ultimoRecibo.justificacion_fechas && (
+              <div
+                style={{
+                  marginTop: 12,
+                  fontSize: 13,
+                  color: 'var(--accent-blue)',
+                  background: 'rgba(59,130,246,0.1)',
+                  border: '1px solid rgba(59,130,246,0.25)',
+                  padding: '10px 14px',
+                  borderRadius: 8
+                }}
+              >
+                ℹ️ <strong>Período modificado por administración:</strong>{' '}
+                {ultimoRecibo.justificacion_fechas}
+              </div>
             )}
 
             {ultimoRecibo.admin_nota && (

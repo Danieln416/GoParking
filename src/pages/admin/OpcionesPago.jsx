@@ -171,10 +171,12 @@ export default function OpcionesPago() {
       };
 
       if (qrFile && qrPreview) {
-        payload.base64Data = qrPreview.split(',')[1];
+        const b64 = qrPreview.includes(',') ? qrPreview.split(',')[1] : qrPreview;
+        payload.qrBase64 = b64;
+        payload.base64Data = b64;
         payload.fileName = qrFile.name;
-        payload.mimeType = qrFile.type;
-        payload.qr_url = qrPreview; // Inmediata visualización local
+        payload.mimeType = qrFile.type || 'image/png';
+        payload.qr_url = ''; // Se generará limpia en R2 por el backend
       }
 
       const res = await apiGuardarCuentaPago(payload);

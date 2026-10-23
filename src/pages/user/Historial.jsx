@@ -161,8 +161,9 @@ export default function Historial() {
                         />
                       </a>
                     ) : (
-                      <div style={{ width: 80, height: 80, borderRadius: 10, background: 'var(--bg-secondary)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                        <Receipt size={28} color="var(--text-muted)" />
+                      <div style={{ width: 80, height: 80, borderRadius: 10, background: 'rgba(22, 199, 83, 0.08)', border: '1px solid rgba(22, 199, 83, 0.25)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                        <CheckCircle size={26} color="var(--accent-green)" />
+                        <span style={{ fontSize: 9, fontWeight: 800, color: 'var(--accent-green)', marginTop: 4, letterSpacing: 0.5 }}>MANUAL</span>
                       </div>
                     )}
 
@@ -173,7 +174,9 @@ export default function Historial() {
                             {formatPeriodoLabel(recibo)}
                           </h3>
                           <p style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
-                            Subido: {new Date(recibo.fecha_subida).toLocaleDateString('es-CO', { day: '2-digit', month: 'short', year: 'numeric' })}
+                            Fecha de registro: {new Date(recibo.fecha_subida).toLocaleDateString('es-CO', { day: '2-digit', month: 'short', year: 'numeric' })}
+                            {recibo.metodo_pago && ` · Método: ${recibo.metodo_pago}`}
+                            {recibo.valor && ` · Valor: $${Number(recibo.valor).toLocaleString('es-CO')}`}
                           </p>
                         </div>
                         <StatusBadge estado={recibo.estado} />

@@ -10,6 +10,7 @@ import {
   getNextAdminClosingPeriod,
   saveClosedPeriod
 } from '../../utils/periodo.js';
+import ModalRegistrarPago from '../../components/ModalRegistrarPago.jsx';
 
 const getFormattedDate = (date) => {
   return date.toISOString().split('T')[0];
@@ -31,6 +32,8 @@ export default function CierreMes() {
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState(null);
   const [incluirEnRevision, setIncluirEnRevision] = useState(false);
+  const [modalPagoOpen, setModalPagoOpen] = useState(false);
+  const [usuarioParaPago, setUsuarioParaPago] = useState(null);
 
   useEffect(() => {
     loadCierre();
@@ -522,28 +525,50 @@ export default function CierreMes() {
                             {fmt(u.valor_tarifa)}
                           </div>
                         </div>
-                        {waLink && (
-                          <a
-                            href={waLink}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="btn btn-sm"
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 6, alignItems: 'flex-end', flexShrink: 0 }}>
+                          <button
+                            type="button"
+                            className="btn btn-sm btn-primary"
                             style={{
-                              background: 'rgba(37, 211, 102, 0.15)',
-                              color: '#25D366',
-                              border: '1px solid rgba(37, 211, 102, 0.35)',
-                              padding: '5px 10px',
+                              background: 'rgba(22, 199, 83, 0.2)',
+                              color: 'var(--accent-green)',
+                              border: '1px solid rgba(22, 199, 83, 0.4)',
+                              padding: '4px 8px',
                               fontSize: 11,
                               display: 'inline-flex',
                               alignItems: 'center',
-                              gap: 5,
-                              textDecoration: 'none',
-                              flexShrink: 0
+                              gap: 4
                             }}
+                            onClick={() => {
+                              setUsuarioParaPago(u);
+                              setModalPagoOpen(true);
+                            }}
+                            title={`Marcar el ciclo actual como pagado para ${u.nombre}`}
                           >
-                            <MessageSquare size={13} /> Cobrar
-                          </a>
-                        )}
+                            <CheckCircle size={12} /> Marcar Pagado
+                          </button>
+                          {waLink && (
+                            <a
+                              href={waLink}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="btn btn-sm"
+                              style={{
+                                background: 'rgba(37, 211, 102, 0.15)',
+                                color: '#25D366',
+                                border: '1px solid rgba(37, 211, 102, 0.35)',
+                                padding: '4px 8px',
+                                fontSize: 11,
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: 4,
+                                textDecoration: 'none'
+                              }}
+                            >
+                              <MessageSquare size={12} /> Cobrar
+                            </a>
+                          )}
+                        </div>
                       </div>
                     );
                   })}
@@ -604,6 +629,18 @@ export default function CierreMes() {
           </div>
         </div>
       )}
+
+      {/* Modal Registrar Pago / Marcar Período Pagado */}
+      <ModalRegistrarPago
+        isOpen={modalPagoOpen}
+        onClose={() => setModalPagoOpen(false)}
+        onSuccess={(data, user) => {
+          showToast('success', `Período marcado como pagado exitosamente para ${user?.nombre || 'el usuario'}`);
+          loadCierre();
+        }}
+        usuarioInicial={usuarioParaPago}
+        periodoInicial={{ fechaInicio: startDate, fechaFin: endDate }}
+      />
 
       {toast && (
         <div className="toast-container">

@@ -281,6 +281,32 @@ export const apiActualizarFechasRecibo = ({ reciboId, fechaInicio, fechaFin, mes
     return result;
   });
 
+export const apiRegistrarPagoManual = ({
+  usuarioId,
+  fechaInicio,
+  fechaFin,
+  mes,
+  anio,
+  metodoPago,
+  valor,
+  nota,
+  fechaPago
+}) =>
+  callAPI('registrarPagoManual', {
+    usuarioId,
+    fechaInicio,
+    fechaFin,
+    mes,
+    anio,
+    metodoPago,
+    valor,
+    nota,
+    fechaPago
+  }).then(result => {
+    if (result.success) invalidateReads(['getRecibos', 'getAdminResumen', 'getCierreMes']);
+    return result;
+  });
+
 export const apiSubirRecibo = (
   userId,
   userName,

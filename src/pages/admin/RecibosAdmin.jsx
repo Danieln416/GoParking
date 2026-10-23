@@ -45,6 +45,7 @@ import {
   parseDate
 } from '../../utils/periodo.js';
 import { getReceiptMediaUrl, getReceiptViewerUrl } from '../../utils/media.js';
+import ModalRegistrarPago from '../../components/ModalRegistrarPago.jsx';
 
 const ADMIN_CYCLE = getAdminClosingPeriod(new Date());
 
@@ -88,6 +89,25 @@ export default function RecibosAdmin() {
   const [cobroJustificacion, setCobroJustificacion] = useState('');
   const [cobroFecha, setCobroFecha] = useState(new Date().toISOString().slice(0, 10));
   const [guardandoCobro, setGuardandoCobro] = useState(false);
+
+  // Modal para registrar pago / marcar período pagado
+  const [modalPagoOpen, setModalPagoOpen] = useState(false);
+  const [usuarioParaPago, setUsuarioParaPago] = useState(null);
+  const [periodoParaPago, setPeriodoParaPago] = useState(null);
+
+  function handleAbrirModalPago(user = null, periodo = null) {
+    setUsuarioParaPago(user);
+    setPeriodoParaPago(periodo);
+    setModalPagoOpen(true);
+  }
+
+  function handlePagoRegistradoExitoso(data, user) {
+    showToast('success', `Período marcado como pagado exitosamente para ${user?.nombre || 'el usuario'}`);
+    loadRecibos();
+    if (startDate && endDate) {
+      loadCierre(startDate, endDate);
+    }
+  }
 
   useEffect(() => {
     loadRecibos();
@@ -530,6 +550,14 @@ export default function RecibosAdmin() {
           <button
             type="button"
             className="btn btn-primary"
+            style={{ background: 'var(--accent-green)', borderColor: 'var(--accent-green)', color: '#fff' }}
+            onClick={() => handleAbrirModalPago(null)}
+          >
+            <CheckCircle size={16} /> Marcar Período Pagado
+          </button>
+          <button
+            type="button"
+            className="btn btn-primary"
             onClick={() => handleOpenCrearCobro('multa')}
           >
             <Plus size={16} /> Agregar Cobro / Multa
@@ -733,6 +761,24 @@ export default function RecibosAdmin() {
                             >
                               {moraInfo.text}
                             </span>
+                            <button
+                              type="button"
+                              className="btn btn-sm btn-primary"
+                              style={{
+                                background: 'rgba(22, 199, 83, 0.2)',
+                                color: 'var(--accent-green)',
+                                border: '1px solid rgba(22, 199, 83, 0.4)',
+                                padding: '4px 9px',
+                                fontSize: 11,
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: 4
+                              }}
+                              onClick={() => handleAbrirModalPago(user, { fechaInicio: startDate, fechaFin: endDate })}
+                              title={`Marcar el ciclo actual como pagado para ${user.nombre}`}
+                            >
+                              <CheckCircle size={12} /> Marcar Pagado
+                            </button>
                             {(user.celular || user.telefono) && (
                               <a
                                 href={buildWhatsAppLink(user)}
@@ -1323,6 +1369,16 @@ export default function RecibosAdmin() {
           </div>
         </div>
       )}
+
+      {/* Modal Registrar Pago / Marcar Período Pagado */}
+      <ModalRegistrarPago
+        isOpen={modalPagoOpen}
+        onClose={() => setModalPagoOpen(false)}
+        onSuccess={handlePagoRegistradoExitoso}
+        usuarioInicial={usuarioParaPago}
+        periodoInicial={periodoParaPago}
+        usuariosDisponibles={usuariosList}
+      />
 
       {toast && (
         <div className="toast-container">

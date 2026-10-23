@@ -1135,7 +1135,7 @@ export default function UserDashboard() {
               <StatusBadge estado={ultimoRecibo.estado} />
             </div>
 
-            {getReceiptMediaUrl(ultimoRecibo) && !receiptImageError && (
+            {getReceiptMediaUrl(ultimoRecibo) && !receiptImageError ? (
               <a
                 href={getReceiptViewerUrl(ultimoRecibo)}
                 target="_blank"
@@ -1155,6 +1155,28 @@ export default function UserDashboard() {
                   }}
                 />
               </a>
+            ) : (
+              <div
+                style={{
+                  padding: '14px 16px',
+                  borderRadius: 8,
+                  background: 'rgba(22, 199, 83, 0.08)',
+                  border: '1px solid rgba(22, 199, 83, 0.25)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 12,
+                  marginBottom: 10
+                }}
+              >
+                <CheckCircle size={26} color="var(--accent-green)" style={{ flexShrink: 0 }} />
+                <div>
+                  <strong style={{ fontSize: 13, color: 'var(--text-primary)' }}>Pago registrado y validado por administración</strong>
+                  <p style={{ fontSize: 12, color: 'var(--text-secondary)', margin: '2px 0 0' }}>
+                    {ultimoRecibo.metodo_pago ? `Método: ${ultimoRecibo.metodo_pago} · ` : ''}
+                    Tu mensualidad correspondiente a este período se encuentra aprobada y al día.
+                  </p>
+                </div>
+              </div>
             )}
 
             {getReceiptViewerUrl(ultimoRecibo) && (

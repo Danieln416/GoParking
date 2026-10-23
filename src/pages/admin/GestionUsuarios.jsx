@@ -9,7 +9,8 @@ import {
   AlertCircle,
   UserCheck,
   UserX,
-  Key
+  Key,
+  DollarSign
 } from 'lucide-react';
 import {
   apiGetUsuarios,
@@ -23,6 +24,7 @@ import {
   apiAsignarPuestosUsuario
 } from '../../api.js';
 import { parseDate, formatDateInput } from '../../utils/periodo.js';
+import ModalRegistrarPago from '../../components/ModalRegistrarPago.jsx';
 
 const TIPOS_VEHICULO = [
   { value: '', label: 'Sin vehículo / Sin asignación' },
@@ -64,6 +66,13 @@ export default function GestionUsuarios() {
   const [search, setSearch] = useState('');
   const [toast, setToast] = useState(null);
   const [activeTab, setActiveTab] = useState('activos');
+  const [modalPagoOpen, setModalPagoOpen] = useState(false);
+  const [usuarioParaPago, setUsuarioParaPago] = useState(null);
+
+  function handleAbrirModalPago(u) {
+    setUsuarioParaPago(u);
+    setModalPagoOpen(true);
+  }
 
   useEffect(() => {
     loadUsuarios();
@@ -807,6 +816,15 @@ async function handleSave(event) {
                               <>
                                 <button
                                   className="btn btn-ghost btn-icon"
+                                  onClick={() => handleAbrirModalPago(usuario)}
+                                  title="Marcar período como pagado / Registrar pago"
+                                  style={{ color: 'var(--accent-green)' }}
+                                >
+                                  <DollarSign size={15} />
+                                </button>
+
+                                <button
+                                  className="btn btn-ghost btn-icon"
                                   onClick={() => openEdit(usuario)}
                                   title={!hasPassword ? "Asignar contraseña / acceso" : "Editar usuario"}
                                   style={!hasPassword ? { color: '#eab308' } : {}}
@@ -1335,6 +1353,17 @@ async function handleSave(event) {
           </div>
         </div>
       )}
+
+      {/* Modal Registrar Pago / Marcar Período Pagado */}
+      <ModalRegistrarPago
+        isOpen={modalPagoOpen}
+        onClose={() => setModalPagoOpen(false)}
+        onSuccess={(data, user) => {
+          showToast('success', `Período marcado como pagado exitosamente para ${user?.nombre || 'el usuario'}`);
+        }}
+        usuarioInicial={usuarioParaPago}
+        usuariosDisponibles={usuarios}
+      />
 
       {toast && (
         <div className="toast-container">

@@ -798,6 +798,158 @@ export default {
         });
       }
 
+      if (action === 'registrarPagoManual') {
+        const {
+          usuarioId,
+          fechaInicio,
+          fechaFin,
+          mes,
+          anio,
+          metodoPago,
+          valor,
+          nota,
+          fechaPago
+        } = data;
+
+        if (!usuarioId) {
+          return json({ success: false, error: 'ID de usuario requerido' });
+        }
+        if (!fechaInicio) {
+          return json({ success: false, error: 'Fecha de inicio del período requerida' });
+        }
+
+        const user = await env.DB.prepare(
+          "SELECT id, nombre, correo, tipo_vehiculo, valor_tarifa, placa_carro, placa_moto, fecha_inicio FROM usuarios WHERE id = ?"
+        ).bind(usuarioId).first();
+
+        if (!user) {
+          return json({ success: false, error: 'Usuario no encontrado' });
+        }
+
+        const fInicio = normalizarFecha(fechaInicio);
+        let fFin = normalizarFecha(fechaFin);
+        if (!fFin && fInicio) {
+          const d = parseDate(fInicio);
+          fFin = formatDate(new Date(d.getFullYear(), d.getMonth() + 1, d.getDate() - 1));
+        }
+
+        const startDateObj = parseDate(fInicio);
+        const m = Number(mes) || (startDateObj ? startDateObj.getMonth() + 1 : (new Date().getMonth() + 1));
+        const a = Number(anio) || (startDateObj ? startDateObj.getFullYear() : new Date().getFullYear());
+
+        const mPago = String(metodoPago || 'Efectivo').trim();
+        const vTarifa = valor !== undefined && valor !== null && valor !== ''
+          ? Number(valor)
+          : Number(user.valor_tarifa || 0);
+
+        const fechaPagoVal = normalizarFecha(fechaPago) || new Date().toISOString().slice(0, 10);
+        const fechaSubidaIso = fechaPagoVal + 'T12:00:00.000Z';
+        const nowIso = new Date().toISOString();
+        const adminNotaTexto = nota && String(nota).trim()
+          ? String(nota).trim()
+          : 'Pago manual registrado por administración';
+        const justificacionTexto = 'Período marcado como pagado por administración';
+
+        // Buscar si ya existe un recibo para este usuario con la misma fecha_inicio
+        const reciboExistente = await env.DB.prepare(
+          "SELECT * FROM recibos WHERE usuario_id = ? AND fecha_inicio = ? ORDER BY fecha_subida DESC LIMIT 1"
+        ).bind(usuarioId, fInicio).first();
+
+        if (reciboExistente) {
+          await env.DB.prepare(`
+            UPDATE recibos
+            SET estado = 'aprobado',
+                fecha_fin = ?,
+                mes = ?,
+                anio = ?,
+                metodo_pago = ?,
+                valor = ?,
+                fecha_subida = ?,
+                fecha_revision = ?,
+                admin_nota = ?,
+                justificacion_fechas = ?
+            WHERE id = ?
+          `).bind(
+            fFin,
+            m,
+            a,
+            mPago,
+            vTarifa,
+            fechaSubidaIso,
+            nowIso,
+            adminNotaTexto,
+            justificacionTexto,
+            reciboExistente.id
+          ).run();
+
+          return json({
+            success: true,
+            message: 'Recibo existente actualizado y marcado como pagado',
+            data: {
+              id: reciboExistente.id,
+              usuario_id: usuarioId,
+              usuario_nombre: user.nombre,
+              fecha_inicio: fInicio,
+              fecha_fin: fFin,
+              mes: m,
+              anio: a,
+              metodo_pago: mPago,
+              valor: vTarifa,
+              estado: 'aprobado',
+              admin_nota: adminNotaTexto
+            }
+          });
+        }
+
+        const nuevoId = 'recibo-manual-' + Date.now();
+        await env.DB.prepare(`
+          INSERT INTO recibos (
+            id, usuario_id, usuario_nombre, usuario_correo,
+            fecha_subida, fecha_inicio, fecha_fin, mes, anio,
+            metodo_pago, valor, url_imagen, r2_key, estado,
+            admin_nota, fecha_revision, justificacion_fechas
+          ) VALUES (
+            ?, ?, ?, ?,
+            ?, ?, ?, ?, ?,
+            ?, ?, '', '', 'aprobado',
+            ?, ?, ?
+          )
+        `).bind(
+          nuevoId,
+          usuarioId,
+          user.nombre,
+          user.correo || '',
+          fechaSubidaIso,
+          fInicio,
+          fFin,
+          m,
+          a,
+          mPago,
+          vTarifa,
+          adminNotaTexto,
+          nowIso,
+          justificacionTexto
+        ).run();
+
+        return json({
+          success: true,
+          message: 'Pago de período registrado y aprobado exitosamente',
+          data: {
+            id: nuevoId,
+            usuario_id: usuarioId,
+            usuario_nombre: user.nombre,
+            fecha_inicio: fInicio,
+            fecha_fin: fFin,
+            mes: m,
+            anio: a,
+            metodo_pago: mPago,
+            valor: vTarifa,
+            estado: 'aprobado',
+            admin_nota: adminNotaTexto
+          }
+        });
+      }
+
       // ----------------------------------------------------
       // PUESTOS
       // ----------------------------------------------------
@@ -856,14 +1008,15 @@ export default {
         const endIso = endDate + 'T23:59:59';
         const baseOrigin = env.MEDIA_BASE_URL || url.origin;
 
-        // Un recibo pertenece al ciclo si fue subido/recaudado durante este ciclo contable (fecha_subida entre startIso y endIso)
+        // Un recibo pertenece al ciclo si fue subido/recaudado durante este ciclo contable o su período corresponde a este ciclo
         const { results: rawRecibos } = await env.DB.prepare(`
           SELECT r.*, u.valor_tarifa, u.placa_carro, u.placa_moto, u.tipo_vehiculo
           FROM recibos r
           LEFT JOIN usuarios u ON r.usuario_id = u.id
-          WHERE r.fecha_subida >= ? AND r.fecha_subida <= ?
+          WHERE (r.fecha_subida >= ? AND r.fecha_subida <= ?)
+             OR (r.fecha_inicio >= ? AND r.fecha_inicio <= ?)
           ORDER BY r.fecha_subida DESC
-        `).bind(startIso, endIso).all();
+        `).bind(startIso, endIso, startDate, endDate).all();
 
         const { results: gastos } = await env.DB.prepare(`
           SELECT * FROM gastos WHERE fecha >= ? AND fecha <= ? ORDER BY fecha DESC
@@ -887,7 +1040,7 @@ export default {
         const recibos = Array.from(uniqueMap.values());
 
         const formatearRecibo = (r) => {
-          const valor = Number(r.valor_tarifa || 0);
+          const valor = Number(r.valor !== null && r.valor !== undefined && r.valor !== '' ? r.valor : (r.valor_tarifa || 0));
           const fullImg = r.url_imagen ? (r.url_imagen.startsWith('http') ? r.url_imagen : `${baseOrigin}${r.url_imagen.startsWith('/') ? '' : '/'}${r.url_imagen}`) : '';
           return {
             recibo_id: r.id,
@@ -918,9 +1071,10 @@ export default {
         const totalPendientes = recibosPendientes.reduce((sum, d) => sum + d.valor, 0);
         const totalGastos = gastos.reduce((sum, g) => sum + Number(g.valor || 0), 0);
 
-        // Identificar qué usuarios activos ya pagaron en este período
-        const idsPagados = new Set(recibos.map(r => r.usuario_id).filter(Boolean));
-        const correosPagados = new Set(recibos.map(r => String(r.usuario_correo || '').toLowerCase()).filter(Boolean));
+        // Identificar qué usuarios activos ya pagaron en este período (solo recibos aprobados o en revisión)
+        const recibosValidos = recibos.filter(r => r.estado === 'aprobado' || r.estado === 'en_revision');
+        const idsPagados = new Set(recibosValidos.map(r => r.usuario_id).filter(Boolean));
+        const correosPagados = new Set(recibosValidos.map(r => String(r.usuario_correo || '').toLowerCase()).filter(Boolean));
 
         const sDate = parseDate(startDate);
         const eDate = parseDate(endDate);

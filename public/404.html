@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8">
+    <title>GoParking — Redirigiendo...</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <script>
+      // Redirigir de inmediato al inicio para que React Router tome el control
+      try {
+        window.location.replace('/login');
+      } catch (e) {
+        window.location.href = '/login';
+      }
+    </script>
+    <style>
+      body {
+        margin: 0;
+        padding: 0;
+        background-color: #0b1120;
+        color: #f8fafc;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        height: 100vh;
+        text-align: center;
+      }
+      .box {
+        padding: 30px;
+        border-radius: 12px;
+        background: #1e293b;
+        border: 1px solid #334155;
+      }
+      a {
+        color: #16c753;
+        text-decoration: none;
+        font-weight: bold;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="box">
+      <h2>Redirigiendo a GoParking...</h2>
+      <p>Si no eres redirigido automáticamente, <a href="/login">haz clic aquí para ir al inicio de sesión</a>.</p>
+    </div>
+  </body>
+</html>

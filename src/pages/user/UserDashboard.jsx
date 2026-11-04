@@ -17,7 +17,8 @@ import {
   Smartphone,
   Wallet,
   X,
-  AlertTriangle
+  AlertTriangle,
+  IdCard
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext.jsx';
 import {
@@ -532,10 +533,25 @@ export default function UserDashboard() {
           <h1>Bienvenido, {user?.nombre?.split(' ')[0]} 👋</h1>
         </div>
 
-        <Link to="/usuario/subir-recibo" className="btn btn-primary">
-          <Upload size={16} />
-          Subir Recibo
-        </Link>
+        <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+          <Link
+            to="/usuario/identificador"
+            className="btn btn-ghost"
+            style={{
+              borderColor: 'rgba(22, 199, 83, 0.4)',
+              color: 'var(--accent-green)',
+              background: 'rgba(22, 199, 83, 0.08)'
+            }}
+          >
+            <IdCard size={16} />
+            Mi Carnet ID
+          </Link>
+
+          <Link to="/usuario/subir-recibo" className="btn btn-primary">
+            <Upload size={16} />
+            Subir Recibo
+          </Link>
+        </div>
       </div>
 
       <div className="page-body">

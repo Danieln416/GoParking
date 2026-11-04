@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Outlet, NavLink, useNavigate } from 'react-router-dom';
-import { Car, LayoutDashboard, Receipt, Upload, MessageSquare, RotateCw, LogOut, Menu, X } from 'lucide-react';
+import { Car, LayoutDashboard, Receipt, Upload, MessageSquare, RotateCw, LogOut, Menu, X, IdCard } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext.jsx';
 import { apiClearCache } from '../../api.js';
 
@@ -43,6 +43,11 @@ export default function UserLayout() {
           <NavLink to="/usuario" end className={({ isActive }) => `sidebar-link ${isActive ? 'active' : ''}`}>
             <LayoutDashboard className="nav-icon" />
             Inicio
+          </NavLink>
+
+          <NavLink to="/usuario/identificador" className={({ isActive }) => `sidebar-link ${isActive ? 'active' : ''}`}>
+            <IdCard className="nav-icon" />
+            Mi Carnet ID
           </NavLink>
 
           <NavLink to="/usuario/historial" className={({ isActive }) => `sidebar-link ${isActive ? 'active' : ''}`}>

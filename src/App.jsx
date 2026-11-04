@@ -9,6 +9,7 @@ import AdminLayout from './pages/admin/AdminLayout.jsx';
 
 // User Pages
 import UserDashboard from './pages/user/UserDashboard.jsx';
+import CarnetID from './pages/user/CarnetID.jsx';
 import Historial from './pages/user/Historial.jsx';
 import SubirRecibo from './pages/user/SubirRecibo.jsx';
 import Solicitudes from './pages/user/Solicitudes.jsx';
@@ -40,14 +41,19 @@ export default function App() {
   return (
     <BrowserRouter>
       <Routes>
+        <Route path="/" element={<Navigate to={user ? (user.rol === 'admin' ? '/admin' : '/usuario') : '/login'} replace />} />
         <Route path="/login" element={user ? <Navigate to={user.rol === 'admin' ? '/admin' : '/usuario'} replace /> : <Login />} />
 
         {/* Usuario */}
         <Route path="/usuario" element={<ProtectedRoute allowedRole="usuario"><UserLayout /></ProtectedRoute>}>
           <Route index element={<UserDashboard />} />
+          <Route path="identificador" element={<CarnetID />} />
+          <Route path="id" element={<CarnetID />} />
+          <Route path="carnet" element={<CarnetID />} />
           <Route path="historial" element={<Historial />} />
           <Route path="subir-recibo" element={<SubirRecibo />} />
           <Route path="solicitudes" element={<Solicitudes />} />
+          <Route path="*" element={<Navigate to="/usuario" replace />} />
         </Route>
 
         {/* Admin */}
@@ -60,9 +66,10 @@ export default function App() {
           <Route path="whatsapp" element={<WhatsAppAdmin />} />
           <Route path="cierre-mes" element={<CierreMes />} />
           <Route path="solicitudes" element={<SolicitudesAdmin />} />
+          <Route path="*" element={<Navigate to="/admin" replace />} />
         </Route>
 
-        <Route path="*" element={<Navigate to="/login" replace />} />
+        <Route path="*" element={<Navigate to={user ? (user.rol === 'admin' ? '/admin' : '/usuario') : '/login'} replace />} />
       </Routes>
     </BrowserRouter>
   );

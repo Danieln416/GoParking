@@ -8,13 +8,26 @@ export function AuthProvider({ children }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const storedUser = localStorage.getItem('parking_user');
-    const storedToken = localStorage.getItem('parking_token');
-    if (storedUser && storedToken) {
-      setUser(JSON.parse(storedUser));
-      setToken(storedToken);
+    try {
+      const storedUser = localStorage.getItem('parking_user');
+      const storedToken = localStorage.getItem('parking_token');
+      if (storedUser && storedToken) {
+        const parsed = JSON.parse(storedUser);
+        if (parsed && typeof parsed === 'object') {
+          setUser(parsed);
+          setToken(storedToken);
+        } else {
+          localStorage.removeItem('parking_user');
+          localStorage.removeItem('parking_token');
+        }
+      }
+    } catch (e) {
+      console.warn('Error al recuperar sesión previa:', e);
+      localStorage.removeItem('parking_user');
+      localStorage.removeItem('parking_token');
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   }, []);
 
   const login = (userData, userToken) => {

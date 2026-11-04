@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Outlet, NavLink, useNavigate } from 'react-router-dom';
-import { Car, LayoutDashboard, Users, Receipt, MapPin, Calculator, MessageSquare, CreditCard, QrCode, RotateCw, LogOut, Menu, X } from 'lucide-react';
+import { Car, LayoutDashboard, Users, Receipt, MapPin, Calculator, MessageSquare, CreditCard, QrCode, RotateCw, LogOut, Menu, X, Camera } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext.jsx';
 import { apiClearCache } from '../../api.js';
 
@@ -41,6 +41,11 @@ export default function AdminLayout() {
           <NavLink to="/admin" end className={({ isActive }) => `sidebar-link ${isActive ? 'active' : ''}`}>
             <LayoutDashboard className="nav-icon" />
             Dashboard
+          </NavLink>
+
+          <NavLink to="/admin/control-placas" className={({ isActive }) => `sidebar-link ${isActive ? 'active' : ''}`}>
+            <Camera className="nav-icon" />
+            Control de Placas
           </NavLink>
 
           <NavLink to="/admin/usuarios" className={({ isActive }) => `sidebar-link ${isActive ? 'active' : ''}`}>

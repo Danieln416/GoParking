@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Users, Receipt, MapPin, CheckCircle, Clock, MessageSquare, TrendingUp } from 'lucide-react';
+import { Users, Receipt, MapPin, CheckCircle, Clock, MessageSquare, TrendingUp, Camera } from 'lucide-react';
 import { apiGetAdminResumen } from '../../api.js';
 import { Link } from 'react-router-dom';
 
@@ -44,11 +44,16 @@ export default function AdminDashboard() {
 
   return (
     <div className="page-enter">
-      <div className="page-header">
+      <div className="page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 10 }}>
         <h1>Panel de Administración</h1>
-        <Link to="/admin/recibos" className="btn btn-primary">
-          <Receipt size={16} /> Ver Recibos Pendientes
-        </Link>
+        <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+          <Link to="/admin/control-placas" className="btn btn-ghost" style={{ borderColor: 'var(--accent-cyan)', color: 'var(--accent-cyan)' }}>
+            <Camera size={16} /> Control de Placas
+          </Link>
+          <Link to="/admin/recibos" className="btn btn-primary">
+            <Receipt size={16} /> Ver Recibos Pendientes
+          </Link>
+        </div>
       </div>
 
       <div className="page-body">
@@ -119,6 +124,7 @@ export default function AdminDashboard() {
             <h3 className="card-title" style={{ marginBottom: 16 }}>Accesos Rápidos</h3>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               {[
+                { to: '/admin/control-placas', icon: <Camera size={18} />, label: 'Control de Placas', desc: 'Verificar o escanear por cámara' },
                 { to: '/admin/usuarios', icon: <Users size={18} />, label: 'Agregar Usuario', desc: 'Registrar nuevo cliente' },
                 { to: '/admin/recibos', icon: <Receipt size={18} />, label: 'Revisar Recibos', desc: `${stats.enRevision} pendientes` },
                 { to: '/admin/puestos', icon: <MapPin size={18} />, label: 'Ver Parqueadero', desc: `${stats.puestosLibres} libres disponibles` },

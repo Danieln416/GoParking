@@ -23,6 +23,7 @@ import CierreMes from './pages/admin/CierreMes.jsx';
 import SolicitudesAdmin from './pages/admin/SolicitudesAdmin.jsx';
 import OpcionesPago from './pages/admin/OpcionesPago.jsx';
 import WhatsAppAdmin from './pages/admin/WhatsAppAdmin.jsx';
+import ControlPlacas from './pages/admin/ControlPlacas.jsx';
 
 function ProtectedRoute({ children, allowedRole }) {
   const { user, loading } = useAuth();
@@ -59,6 +60,9 @@ export default function App() {
         {/* Admin */}
         <Route path="/admin" element={<ProtectedRoute allowedRole="admin"><AdminLayout /></ProtectedRoute>}>
           <Route index element={<AdminDashboard />} />
+          <Route path="control-placas" element={<ControlPlacas />} />
+          <Route path="placas" element={<ControlPlacas />} />
+          <Route path="escaner" element={<ControlPlacas />} />
           <Route path="usuarios" element={<GestionUsuarios />} />
           <Route path="recibos" element={<RecibosAdmin />} />
           <Route path="puestos" element={<GestionPuestos />} />

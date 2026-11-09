@@ -8,7 +8,7 @@
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, Authorization, x-api-key',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization, x-api-key, x-door-token',
   'Access-Control-Max-Age': '86400',
 };
 
@@ -330,6 +330,51 @@ async function ejecutarBarridoMorosos(env) {
 
   console.log(`Barrido finalizado. Notificaciones enviadas: ${enviados}, Omitidas por aviso previo: ${omitidos}`);
   return { success: true, enviados, omitidos };
+}
+
+// ============================================================
+// CONTROL DE PUERTA / ESP32 Y SEGURIDAD
+// ============================================================
+
+function parseClientDevice(userAgent = '') {
+  const ua = String(userAgent);
+  let os = 'Dispositivo';
+  if (/android/i.test(ua)) os = 'Android';
+  else if (/iphone|ipad|ipod/i.test(ua)) os = 'iOS (iPhone/iPad)';
+  else if (/windows nt 10/i.test(ua)) os = 'Windows 10/11';
+  else if (/windows/i.test(ua)) os = 'Windows';
+  else if (/macintosh|mac os x/i.test(ua)) os = 'macOS';
+  else if (/linux/i.test(ua)) os = 'Linux';
+
+  let browser = 'Web';
+  if (/chrome|crios/i.test(ua) && !/edg/i.test(ua) && !/opr/i.test(ua)) browser = 'Chrome';
+  else if (/safari/i.test(ua) && !/chrome|crios/i.test(ua)) browser = 'Safari';
+  else if (/edg/i.test(ua)) browser = 'Edge';
+  else if (/firefox|fxios/i.test(ua)) browser = 'Firefox';
+  else if (/opera|opr/i.test(ua)) browser = 'Opera';
+
+  return `${os} · ${browser}`;
+}
+
+async function getPuertaSecretToken(env) {
+  try {
+    const row = await env.DB.prepare("SELECT valor FROM config WHERE clave = 'puerta_secret_token'").first();
+    if (row && row.valor && row.valor.trim()) return row.valor.trim();
+  } catch (e) {
+    console.error('Error al obtener puerta_secret_token de D1:', e);
+  }
+  return env.PUERTA_SECRET_TOKEN || 'goparking_esp32_sec_2026';
+}
+
+function validarTokenESP32(request, secretToken, queryToken = null) {
+  const headerToken = request.headers.get('x-door-token') || request.headers.get('x-api-key');
+  const authHeader = request.headers.get('authorization');
+  let bearerToken = null;
+  if (authHeader && authHeader.toLowerCase().startsWith('bearer ')) {
+    bearerToken = authHeader.substring(7).trim();
+  }
+  const tokenProvisto = (headerToken || bearerToken || queryToken || '').trim();
+  return tokenProvisto.length > 0 && tokenProvisto === secretToken.trim();
 }
 
 // ============================================================
@@ -1483,6 +1528,356 @@ export default {
         if (!id) return json({ success: false, error: 'ID requerido' });
         await env.DB.prepare("DELETE FROM cobros_adicionales WHERE id = ?").bind(id).run();
         return json({ success: true });
+      }
+
+      // ----------------------------------------------------
+      // CONTROL DE PUERTA / BARRERA VEHICULAR (ESP32 REST API)
+      // ----------------------------------------------------
+
+      if (action === 'abrirPuerta' || path === '/api/puerta/abrir') {
+        const ipSolicitante = request.headers.get('cf-connecting-ip') || request.headers.get('x-forwarded-for') || 'desconocida';
+        const userAgent = request.headers.get('user-agent') || 'desconocido';
+        const ubicacionIp = request.cf ? [request.cf.city, request.cf.region, request.cf.country].filter(Boolean).join(', ') : 'desconocida';
+        const dispositivo = data.dispositivo || data.deviceDetails || parseClientDevice(userAgent);
+        const ahora = new Date().toISOString();
+
+        const usuarioId = data.usuarioId || data.usuario_id;
+        let usuario = null;
+        let esAdmin = data.rol === 'admin';
+
+        if (usuarioId && usuarioId !== 'admin') {
+          usuario = await env.DB.prepare("SELECT * FROM usuarios WHERE id = ?").bind(usuarioId).first();
+        }
+
+        if (usuario && usuario.rol === 'admin') {
+          esAdmin = true;
+        }
+
+        // Si no es admin, validar usuario y estado de mora / pagos
+        if (!esAdmin) {
+          if (!usuario) {
+            const fallidoId = generateId();
+            await env.DB.prepare(`
+              INSERT INTO historial_puerta (
+                id, comando_id, fecha_hora, fecha_solicitud, solicitado_por, solicitado_nombre,
+                solicitado_correo, solicitado_cedula, placa, tipo_vehiculo, rol,
+                ip_solicitante, dispositivo_usuario, ubicacion_ip, estado, motivo, duracion_pulso_ms
+              ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'DENEGADO', ?, ?)
+            `).bind(
+              fallidoId,
+              'cmd_fallido_' + Date.now(),
+              ahora,
+              ahora,
+              usuarioId || 'desconocido',
+              data.nombre || 'No identificado',
+              data.correo || '',
+              data.cedula || '',
+              data.placa || '',
+              '',
+              'desconocido',
+              ipSolicitante,
+              dispositivo,
+              ubicacionIp,
+              'Acceso denegado: Usuario no registrado',
+              0
+            ).run();
+
+            return json({ success: false, error: 'Acceso denegado: Usuario no registrado en el sistema' }, 403);
+          }
+
+          if (usuario.activo === 0 || usuario.activo === '0') {
+            const fallidoId = generateId();
+            await env.DB.prepare(`
+              INSERT INTO historial_puerta (
+                id, comando_id, fecha_hora, fecha_solicitud, solicitado_por, solicitado_nombre,
+                solicitado_correo, solicitado_cedula, placa, tipo_vehiculo, rol,
+                ip_solicitante, dispositivo_usuario, ubicacion_ip, estado, motivo, duracion_pulso_ms
+              ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'DENEGADO', ?, ?)
+            `).bind(
+              fallidoId,
+              'cmd_fallido_' + Date.now(),
+              ahora,
+              ahora,
+              usuario.id,
+              usuario.nombre,
+              usuario.correo || '',
+              usuario.cedula || '',
+              usuario.placa || '',
+              usuario.tipo_vehiculo || '',
+              usuario.rol || 'usuario',
+              ipSolicitante,
+              dispositivo,
+              ubicacionIp,
+              'Acceso denegado: Usuario inactivo o retirado',
+              0
+            ).run();
+
+            return json({ success: false, error: 'Acceso denegado: Tu cuenta se encuentra inactiva o retirada del parqueadero.' }, 403);
+          }
+
+          // Consultar recibos del usuario para validar mora
+          const { results: userRecibos } = await env.DB.prepare(
+            "SELECT * FROM recibos WHERE usuario_id = ?"
+          ).bind(usuario.id).all();
+
+          const estadoMora = calcularEstadoMoraUsuario(usuario, userRecibos || []);
+          if (estadoMora.enMora && estadoMora.diasMora > 0) {
+            const fallidoId = generateId();
+            await env.DB.prepare(`
+              INSERT INTO historial_puerta (
+                id, comando_id, fecha_hora, fecha_solicitud, solicitado_por, solicitado_nombre,
+                solicitado_correo, solicitado_cedula, placa, tipo_vehiculo, rol,
+                ip_solicitante, dispositivo_usuario, ubicacion_ip, estado, motivo, duracion_pulso_ms
+              ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'DENEGADO', ?, ?)
+            `).bind(
+              fallidoId,
+              'cmd_fallido_' + Date.now(),
+              ahora,
+              ahora,
+              usuario.id,
+              usuario.nombre,
+              usuario.correo || '',
+              usuario.cedula || '',
+              usuario.placa || '',
+              usuario.tipo_vehiculo || '',
+              usuario.rol || 'usuario',
+              ipSolicitante,
+              dispositivo,
+              ubicacionIp,
+              `Acceso denegado: Presenta ${estadoMora.diasMora} día(s) de mora`,
+              0
+            ).run();
+
+            return json({
+              success: false,
+              error: `Acceso denegado: Tu mensualidad presenta ${estadoMora.diasMora} día(s) de vencimiento. Realiza el pago para habilitar la apertura.`
+            }, 403);
+          }
+        }
+
+        // Generar comando de apertura
+        const comandoId = 'cmd_' + Date.now().toString(36) + '_' + Math.random().toString(36).substring(2, 7);
+        const expiraMs = Date.now() + 30000; // TTL: 30 segundos
+        const expiraEn = new Date(expiraMs).toISOString();
+        const tiempoPulsoMs = Number(data.tiempoPulsoMs) || 5000;
+
+        const solId = esAdmin && (!usuario || usuario.rol === 'admin') ? (usuario?.id || 'admin') : usuario.id;
+        const solNombre = usuario ? usuario.nombre : (esAdmin ? 'Administrador' : 'Usuario');
+        const solCorreo = usuario ? usuario.correo : (data.correo || '');
+        const solCedula = usuario ? usuario.cedula : (data.cedula || '');
+        const solPlaca = usuario ? (usuario.placa || data.placa || '') : (data.placa || '');
+        const solTipoVeh = usuario ? (usuario.tipo_vehiculo || '') : (data.tipo_vehiculo || '');
+        const solRol = esAdmin ? 'admin' : (usuario?.rol || 'usuario');
+
+        // Actualizar control_puerta
+        await env.DB.prepare(`
+          INSERT INTO control_puerta (
+            id, estado, comando_id, solicitado_por, solicitado_nombre, fecha_solicitud, expira_en, tiempo_pulso_ms, ultima_actualizacion
+          ) VALUES ('puerta_principal', 'PENDIENTE_ABRIR', ?, ?, ?, ?, ?, ?, ?)
+          ON CONFLICT(id) DO UPDATE SET
+            estado = 'PENDIENTE_ABRIR',
+            comando_id = excluded.comando_id,
+            solicitado_por = excluded.solicitado_por,
+            solicitado_nombre = excluded.solicitado_nombre,
+            fecha_solicitud = excluded.fecha_solicitud,
+            expira_en = excluded.expira_en,
+            tiempo_pulso_ms = excluded.tiempo_pulso_ms,
+            ultima_actualizacion = excluded.ultima_actualizacion
+        `).bind(
+          comandoId,
+          solId,
+          solNombre,
+          ahora,
+          expiraEn,
+          tiempoPulsoMs,
+          ahora
+        ).run();
+
+        // Registrar en historial_puerta
+        const historialId = generateId();
+        await env.DB.prepare(`
+          INSERT INTO historial_puerta (
+            id, comando_id, fecha_hora, fecha_solicitud, solicitado_por, solicitado_nombre,
+            solicitado_correo, solicitado_cedula, placa, tipo_vehiculo, rol,
+            ip_solicitante, dispositivo_usuario, ubicacion_ip, estado, motivo, duracion_pulso_ms
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'SOLICITADO', 'Apertura solicitada desde la web', ?)
+        `).bind(
+          historialId,
+          comandoId,
+          ahora,
+          ahora,
+          solId,
+          solNombre,
+          solCorreo,
+          solCedula,
+          solPlaca,
+          solTipoVeh,
+          solRol,
+          ipSolicitante,
+          dispositivo,
+          ubicacionIp,
+          tiempoPulsoMs
+        ).run();
+
+        return json({
+          success: true,
+          message: 'Orden de apertura enviada a la barrera',
+          comando_id: comandoId,
+          expira_en: expiraEn,
+          tiempo_pulso_ms: tiempoPulsoMs,
+          solicitado_nombre: solNombre
+        });
+      }
+
+      if (action === 'getEstadoPuerta' || path === '/api/puerta/estado') {
+        const secretToken = await getPuertaSecretToken(env);
+        const queryToken = data.token || url.searchParams.get('token');
+        const esDispositivo = validarTokenESP32(request, secretToken, queryToken);
+
+        const puerta = await env.DB.prepare("SELECT * FROM control_puerta WHERE id = 'puerta_principal'").first();
+        if (!puerta) {
+          return json({ estado: 'EN_ESPERA', accion: 'NINGUNA' });
+        }
+
+        const ahora = new Date();
+
+        // Si está en PENDIENTE_ABRIR pero ya expiró (>30s)
+        if (puerta.estado === 'PENDIENTE_ABRIR') {
+          const expiraDate = puerta.expira_en ? new Date(puerta.expira_en) : null;
+          if (expiraDate && ahora.getTime() > expiraDate.getTime()) {
+            await env.DB.prepare(`
+              UPDATE control_puerta
+              SET estado = 'EN_ESPERA', ultima_actualizacion = ?
+              WHERE id = 'puerta_principal'
+            `).bind(ahora.toISOString()).run();
+
+            if (puerta.comando_id) {
+              await env.DB.prepare(`
+                UPDATE historial_puerta
+                SET estado = 'EXPIRADO', motivo = 'Orden expirada (sin respuesta de ESP32 en 30s)'
+                WHERE comando_id = ? AND estado = 'SOLICITADO'
+              `).bind(puerta.comando_id).run();
+            }
+
+            return json({
+              estado: 'EN_ESPERA',
+              accion: 'NINGUNA',
+              comando_id: null,
+              motivo: 'Orden expirada'
+            });
+          }
+
+          // Si el que consulta es el ESP32 autenticado
+          if (esDispositivo) {
+            return json({
+              estado: 'PENDIENTE_ABRIR',
+              accion: 'ACTIVAR_RELE',
+              comando_id: puerta.comando_id,
+              tiempo_pulso_ms: puerta.tiempo_pulso_ms || 5000,
+              solicitado_por: puerta.solicitado_nombre || 'Usuario'
+            });
+          }
+
+          // Si es el frontend
+          return json({
+            estado: 'PENDIENTE_ABRIR',
+            comando_id: puerta.comando_id,
+            solicitado_nombre: puerta.solicitado_nombre,
+            tiempo_pulso_ms: puerta.tiempo_pulso_ms || 5000
+          });
+        }
+
+        // Estado normal EN_ESPERA
+        return json({
+          estado: 'EN_ESPERA',
+          accion: 'NINGUNA',
+          comando_id: null,
+          ultima_actualizacion: puerta.ultima_actualizacion
+        });
+      }
+
+      if (action === 'confirmarPuerta' || path === '/api/puerta/confirmar') {
+        const secretToken = await getPuertaSecretToken(env);
+        const queryToken = data.token || url.searchParams.get('token');
+        if (!validarTokenESP32(request, secretToken, queryToken)) {
+          return json({ success: false, error: 'No autorizado: Token de dispositivo ESP32 inválido' }, 401);
+        }
+
+        const comandoId = data.comando_id || data.comandoId;
+        const ahora = new Date().toISOString();
+        const ipESP32 = request.headers.get('cf-connecting-ip') || request.headers.get('x-forwarded-for') || 'desconocida';
+        const dispositivoESP32 = data.dispositivo_id || data.dispositivo || 'ESP32_BARRIER_V1';
+
+        await env.DB.prepare(`
+          UPDATE control_puerta
+          SET estado = 'EN_ESPERA',
+              fecha_ejecucion = ?,
+              ultima_actualizacion = ?
+          WHERE id = 'puerta_principal'
+        `).bind(ahora, ahora).run();
+
+        if (comandoId) {
+          await env.DB.prepare(`
+            UPDATE historial_puerta
+            SET estado = 'COMPLETADO',
+                motivo = 'Apertura confirmada y ejecutada por ESP32',
+                ip_esp32 = ?,
+                dispositivo_esp32 = ?,
+                fecha_confirmacion_esp32 = ?
+            WHERE comando_id = ?
+          `).bind(ipESP32, dispositivoESP32, ahora, comandoId).run();
+        }
+
+        return json({
+          success: true,
+          message: 'Apertura confirmada y registrada exitosamente',
+          fecha: ahora
+        });
+      }
+
+      if (action === 'getHistorialPuerta' || path === '/api/puerta/historial') {
+        const limit = Math.min(Number(data.limit) || 100, 300);
+        const { results } = await env.DB.prepare(`
+          SELECT * FROM historial_puerta
+          ORDER BY fecha_hora DESC
+          LIMIT ?
+        `).bind(limit).all();
+
+        return json({ success: true, data: results || [] });
+      }
+
+      if (action === 'getPuertaConfig' || (path === '/api/puerta/config' && request.method === 'GET')) {
+        const token = await getPuertaSecretToken(env);
+        const puerta = await env.DB.prepare("SELECT * FROM control_puerta WHERE id = 'puerta_principal'").first();
+        return json({
+          success: true,
+          data: {
+            token,
+            estado: puerta?.estado || 'EN_ESPERA',
+            tiempo_pulso_ms: puerta?.tiempo_pulso_ms || 5000,
+            ultima_actualizacion: puerta?.ultima_actualizacion
+          }
+        });
+      }
+
+      if (action === 'guardarPuertaConfig' || (path === '/api/puerta/config' && request.method === 'POST')) {
+        const nuevoToken = (data.token || '').trim();
+        const tiempoPulsoMs = Number(data.tiempo_pulso_ms || data.tiempoPulsoMs) || 5000;
+
+        if (nuevoToken) {
+          await env.DB.prepare(`
+            INSERT INTO config (clave, valor) VALUES ('puerta_secret_token', ?)
+            ON CONFLICT(clave) DO UPDATE SET valor = excluded.valor
+          `).bind(nuevoToken).run();
+        }
+
+        await env.DB.prepare(`
+          UPDATE control_puerta
+          SET tiempo_pulso_ms = ?, ultima_actualizacion = datetime('now', 'localtime')
+          WHERE id = 'puerta_principal'
+        `).bind(tiempoPulsoMs).run();
+
+        return json({ success: true, message: 'Configuración de puerta guardada exitosamente' });
       }
 
       return json({ success: false, error: `Acción '${action}' no reconocida` }, 404);

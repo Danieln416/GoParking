@@ -644,3 +644,34 @@ export const apiEliminarCobroAdicional = (id) =>
     if (res.success) invalidateReads(['getCobrosAdicionales', 'getAdminResumen']);
     return res;
   });
+
+// ============================================================
+// CONTROL DE PUERTA / BARRERA VEHICULAR (ESP32)
+// ============================================================
+
+export const apiAbrirPuerta = (data = {}) =>
+  callAPI('abrirPuerta', data).then(res => {
+    if (res.success) invalidateReads(['getEstadoPuerta', 'getHistorialPuerta']);
+    return res;
+  });
+
+export const apiGetEstadoPuerta = (token = null, options = {}) =>
+  callAPI('getEstadoPuerta', { token }, options);
+
+export const apiConfirmarPuerta = (data = {}) =>
+  callAPI('confirmarPuerta', data).then(res => {
+    if (res.success) invalidateReads(['getEstadoPuerta', 'getHistorialPuerta']);
+    return res;
+  });
+
+export const apiGetHistorialPuerta = (limit = 100, options = {}) =>
+  callAPI('getHistorialPuerta', { limit }, options);
+
+export const apiGetPuertaConfig = (options = {}) =>
+  callAPI('getPuertaConfig', {}, options);
+
+export const apiGuardarPuertaConfig = (data = {}) =>
+  callAPI('guardarPuertaConfig', data).then(res => {
+    if (res.success) invalidateReads(['getPuertaConfig', 'getEstadoPuerta']);
+    return res;
+  });

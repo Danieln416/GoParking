@@ -18,7 +18,8 @@ import {
   Wallet,
   X,
   AlertTriangle,
-  IdCard
+  IdCard,
+  Power
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext.jsx';
 import {
@@ -534,6 +535,22 @@ export default function UserDashboard() {
         </div>
 
         <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+          <Link
+            to="/usuario/identificador"
+            className="btn btn-primary"
+            style={{
+              backgroundColor: '#10b981',
+              borderColor: '#10b981',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+              boxShadow: '0 4px 12px rgba(16, 185, 129, 0.25)'
+            }}
+          >
+            <Power size={16} />
+            Abrir Barrera
+          </Link>
+
           <Link
             to="/usuario/identificador"
             className="btn btn-ghost"

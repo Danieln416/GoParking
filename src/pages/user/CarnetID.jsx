@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo, useRef } from 'react';
 import {
   IdCard,
   Car,
@@ -17,10 +17,13 @@ import {
   MapPin,
   RotateCw,
   BadgeCheck,
-  Upload
+  Upload,
+  Power,
+  Radio,
+  X
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext.jsx';
-import { apiGetPuestosUsuario, apiGetRecibos } from '../../api.js';
+import { apiGetPuestosUsuario, apiGetRecibos, apiAbrirPuerta } from '../../api.js';
 import { getUserBillingInfo, formatDateLabel } from '../../utils/periodo.js';
 import { Link } from 'react-router-dom';
 
@@ -32,6 +35,17 @@ export default function CarnetID() {
   const [copied, setCopied] = useState(false);
   const [fullscreenMode, setFullscreenMode] = useState(false);
   const [zoomQr, setZoomQr] = useState(false);
+
+  // Control de barrera vehicular
+  const [abriendoBarrera, setAbriendoBarrera] = useState(false);
+  const [modalBarrera, setModalBarrera] = useState(null); // { estado: 'enviando' | 'abierta' | 'error', mensaje: '', segundos: 5 }
+  const timerBarreraRef = useRef(null);
+
+  useEffect(() => {
+    return () => {
+      if (timerBarreraRef.current) clearInterval(timerBarreraRef.current);
+    };
+  }, []);
 
   useEffect(() => {
     async function loadData() {
@@ -89,6 +103,74 @@ export default function CarnetID() {
   const isAlDia = billingInfo.status === 'al_dia';
   const isEnRevision = billingInfo.status === 'en_revision';
   const isVencido = billingInfo.status === 'vencido';
+
+  async function handleAbrirBarrera() {
+    if (abriendoBarrera) return;
+
+    if (!isAlDia) {
+      setModalBarrera({
+        estado: 'error',
+        mensaje: 'Tu membresía presenta mora o cobros pendientes. Realiza el pago para habilitar la apertura de la barrera.'
+      });
+      return;
+    }
+
+    setAbriendoBarrera(true);
+    setModalBarrera({
+      estado: 'enviando',
+      mensaje: 'Enviando orden a la barrera vehicular...',
+      segundos: 5
+    });
+
+    try {
+      const res = await apiAbrirPuerta({
+        usuarioId: user?.id,
+        rol: user?.rol || 'usuario',
+        placa: user?.placa || puestos[0]?.numero || '',
+        dispositivo: `${window.navigator.userAgent} (Carnet Digital)`
+      });
+
+      if (res.success) {
+        let segs = Math.round((res.tiempo_pulso_ms || 5000) / 1000);
+        setModalBarrera({
+          estado: 'abierta',
+          mensaje: '¡Barrera abierta! Tienes 5 segundos para pasar.',
+          segundos: segs
+        });
+
+        if (timerBarreraRef.current) clearInterval(timerBarreraRef.current);
+        timerBarreraRef.current = setInterval(() => {
+          segs -= 1;
+          if (segs <= 0) {
+            clearInterval(timerBarreraRef.current);
+            setModalBarrera({
+              estado: 'completado',
+              mensaje: '¡Ingreso completado! Bienvenido a GoParking.',
+              segundos: 0
+            });
+            setTimeout(() => {
+              setModalBarrera(null);
+              setAbriendoBarrera(false);
+            }, 2500);
+          } else {
+            setModalBarrera(prev => prev ? { ...prev, segundos: segs } : null);
+          }
+        }, 1000);
+      } else {
+        setModalBarrera({
+          estado: 'error',
+          mensaje: res.error || 'No se pudo autorizar la apertura de la barrera.'
+        });
+        setAbriendoBarrera(false);
+      }
+    } catch (err) {
+      setModalBarrera({
+        estado: 'error',
+        mensaje: 'Error al comunicar con la barrera: ' + err.message
+      });
+      setAbriendoBarrera(false);
+    }
+  }
 
   return (
     <div className={`page-enter ${fullscreenMode ? 'fullscreen-carnet-view' : ''}`}>
@@ -560,6 +642,74 @@ export default function CarnetID() {
         {/* TARJETAS INFORMATIVAS COMPLEMENTARIAS (no se imprimen) */}
         {!fullscreenMode && (
           <div className="no-print" style={{ width: '100%', maxWidth: 480, marginTop: 20 }}>
+            {/* BOTÓN RÁPIDO DE APERTURA DE BARRERA VEHICULAR */}
+            <div
+              className="card"
+              style={{
+                marginBottom: 16,
+                padding: 18,
+                background: isAlDia
+                  ? 'linear-gradient(135deg, rgba(16, 185, 129, 0.12) 0%, rgba(5, 150, 105, 0.2) 100%)'
+                  : 'rgba(239, 68, 68, 0.08)',
+                border: isAlDia ? '1px solid rgba(16, 185, 129, 0.35)' : '1px solid rgba(239, 68, 68, 0.35)',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 12
+              }}
+            >
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <Radio size={18} color={isAlDia ? '#10b981' : '#ef4444'} className={isAlDia ? 'spin-icon' : ''} />
+                  <h4 style={{ margin: 0, fontSize: 14, fontWeight: 700, color: 'var(--text-primary)' }}>
+                    Control de Acceso Vehicular
+                  </h4>
+                </div>
+                <span
+                  style={{
+                    fontSize: 10,
+                    fontWeight: 700,
+                    padding: '2px 8px',
+                    borderRadius: 12,
+                    background: isAlDia ? 'rgba(16, 185, 129, 0.2)' : 'rgba(239, 68, 68, 0.2)',
+                    color: isAlDia ? '#10b981' : '#ef4444'
+                  }}
+                >
+                  {isAlDia ? 'HABILITADO' : 'BLOQUEADO'}
+                </span>
+              </div>
+
+              <p style={{ margin: 0, fontSize: 12, color: 'var(--text-secondary)' }}>
+                {isAlDia
+                  ? 'Presiona el botón para accionar la apertura de la barrera al entrar o salir.'
+                  : 'Tu mensualidad presenta saldo pendiente. Regulariza tu pago para habilitar la apertura.'}
+              </p>
+
+              <button
+                type="button"
+                className="btn btn-full"
+                onClick={handleAbrirBarrera}
+                disabled={abriendoBarrera || !isAlDia}
+                style={{
+                  padding: '12px 18px',
+                  fontSize: 15,
+                  fontWeight: 700,
+                  backgroundColor: isAlDia ? '#10b981' : '#6b7280',
+                  color: '#fff',
+                  border: 'none',
+                  borderRadius: 10,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: 10,
+                  boxShadow: isAlDia ? '0 4px 14px rgba(16, 185, 129, 0.3)' : 'none',
+                  cursor: isAlDia ? 'pointer' : 'not-allowed'
+                }}
+              >
+                <Power size={18} />
+                {abriendoBarrera ? 'Enviando Orden...' : 'Abrir Barrera de Entrada'}
+              </button>
+            </div>
+
             {/* Si está vencido o pendiente, botón para subir recibo */}
             {!isAlDia && (
               <div
@@ -635,6 +785,106 @@ export default function CarnetID() {
               >
                 Cerrar
               </button>
+            </div>
+          </div>
+        )}
+
+        {/* Modal Interactivo de Apertura de Barrera */}
+        {modalBarrera && (
+          <div className="modal-overlay no-print" onClick={() => modalBarrera.estado === 'error' && setModalBarrera(null)}>
+            <div
+              className="modal-box"
+              style={{
+                maxWidth: 380,
+                textAlign: 'center',
+                padding: 28,
+                borderRadius: 16,
+                border: modalBarrera.estado === 'error' ? '1px solid #ef4444' : '1px solid #10b981',
+                boxShadow: '0 20px 40px rgba(0,0,0,0.6)'
+              }}
+              onClick={e => e.stopPropagation()}
+            >
+              {modalBarrera.estado === 'enviando' && (
+                <>
+                  <div style={{ width: 64, height: 64, borderRadius: 32, background: 'rgba(59, 130, 246, 0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px' }}>
+                    <Radio size={32} color="#3b82f6" className="spin-icon" />
+                  </div>
+                  <h3 style={{ margin: '0 0 8px 0', fontSize: 18, color: 'var(--text-primary)' }}>
+                    Conectando con la Barrera
+                  </h3>
+                  <p style={{ fontSize: 13, color: 'var(--text-secondary)', margin: 0 }}>
+                    {modalBarrera.mensaje}
+                  </p>
+                </>
+              )}
+
+              {modalBarrera.estado === 'abierta' && (
+                <>
+                  <div style={{ width: 72, height: 72, borderRadius: 36, background: 'rgba(16, 185, 129, 0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px', border: '2px solid #10b981' }}>
+                    <Car size={36} color="#10b981" />
+                  </div>
+                  <h3 style={{ margin: '0 0 8px 0', fontSize: 20, fontWeight: 800, color: '#10b981' }}>
+                    ¡BARRERA ABIERTA!
+                  </h3>
+                  <p style={{ fontSize: 14, color: 'var(--text-primary)', margin: '0 0 16px 0', fontWeight: 600 }}>
+                    {modalBarrera.mensaje}
+                  </p>
+                  <div style={{ fontSize: 32, fontWeight: 900, color: '#10b981', fontFamily: 'monospace', marginBottom: 8 }}>
+                    {modalBarrera.segundos}s
+                  </div>
+                  <p style={{ fontSize: 11, color: 'var(--text-secondary)', margin: 0 }}>
+                    Pasa con precaución. El ciclo de paso se cerrará automáticamente.
+                  </p>
+                </>
+              )}
+
+              {modalBarrera.estado === 'completado' && (
+                <>
+                  <div style={{ width: 64, height: 64, borderRadius: 32, background: 'rgba(16, 185, 129, 0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px' }}>
+                    <CheckCircle size={36} color="#10b981" />
+                  </div>
+                  <h3 style={{ margin: '0 0 8px 0', fontSize: 18, color: '#10b981' }}>
+                    ¡Acceso Exitoso!
+                  </h3>
+                  <p style={{ fontSize: 13, color: 'var(--text-secondary)', margin: 0 }}>
+                    {modalBarrera.mensaje}
+                  </p>
+                </>
+              )}
+
+              {modalBarrera.estado === 'error' && (
+                <>
+                  <div style={{ width: 64, height: 64, borderRadius: 32, background: 'rgba(239, 68, 68, 0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px' }}>
+                    <AlertCircle size={36} color="#ef4444" />
+                  </div>
+                  <h3 style={{ margin: '0 0 8px 0', fontSize: 18, color: '#ef4444' }}>
+                    Acceso No Permitido
+                  </h3>
+                  <p style={{ fontSize: 13, color: 'var(--text-secondary)', margin: '0 0 20px 0' }}>
+                    {modalBarrera.mensaje}
+                  </p>
+                  <div style={{ display: 'flex', gap: 10 }}>
+                    <button
+                      type="button"
+                      className="btn btn-ghost btn-sm"
+                      style={{ flex: 1 }}
+                      onClick={() => setModalBarrera(null)}
+                    >
+                      Cerrar
+                    </button>
+                    {!isAlDia && (
+                      <Link
+                        to="/usuario/subir-recibo"
+                        className="btn btn-primary btn-sm"
+                        style={{ flex: 1 }}
+                        onClick={() => setModalBarrera(null)}
+                      >
+                        Subir Pago
+                      </Link>
+                    )}
+                  </div>
+                </>
+              )}
             </div>
           </div>
         )}

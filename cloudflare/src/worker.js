@@ -1615,43 +1615,18 @@ export default {
             return json({ success: false, error: 'Acceso denegado: Tu cuenta se encuentra inactiva o retirada del parqueadero.' }, 403);
           }
 
-          // Consultar recibos del usuario para validar mora
-          const { results: userRecibos } = await env.DB.prepare(
-            "SELECT * FROM recibos WHERE usuario_id = ?"
-          ).bind(usuario.id).all();
-
-          const estadoMora = calcularEstadoMoraUsuario(usuario, userRecibos || []);
-          if (estadoMora.enMora && estadoMora.diasMora > 0) {
-            const fallidoId = generateId();
-            await env.DB.prepare(`
-              INSERT INTO historial_puerta (
-                id, comando_id, fecha_hora, fecha_solicitud, solicitado_por, solicitado_nombre,
-                solicitado_correo, solicitado_cedula, placa, tipo_vehiculo, rol,
-                ip_solicitante, dispositivo_usuario, ubicacion_ip, estado, motivo, duracion_pulso_ms
-              ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'DENEGADO', ?, ?)
-            `).bind(
-              fallidoId,
-              'cmd_fallido_' + Date.now(),
-              ahora,
-              ahora,
-              usuario.id,
-              usuario.nombre,
-              usuario.correo || '',
-              usuario.cedula || '',
-              usuario.placa || '',
-              usuario.tipo_vehiculo || '',
-              usuario.rol || 'usuario',
-              ipSolicitante,
-              dispositivo,
-              ubicacionIp,
-              `Acceso denegado: Presenta ${estadoMora.diasMora} día(s) de mora`,
-              0
-            ).run();
-
-            return json({
-              success: false,
-              error: `Acceso denegado: Tu mensualidad presenta ${estadoMora.diasMora} día(s) de vencimiento. Realiza el pago para habilitar la apertura.`
-            }, 403);
+          // Verificar si tiene mora únicamente para registro informativo en auditoría
+          let notaMora = '';
+          try {
+            const { results: userRecibos } = await env.DB.prepare(
+              "SELECT * FROM recibos WHERE usuario_id = ?"
+            ).bind(usuario.id).all();
+            const estadoMora = calcularEstadoMoraUsuario(usuario, userRecibos || []);
+            if (estadoMora.enMora && estadoMora.diasMora > 0) {
+              notaMora = ` (con ${estadoMora.diasMora}d mora)`;
+            }
+          } catch (e) {
+            console.error('Error calculando mora informativa:', e);
           }
         }
 
@@ -1695,12 +1670,13 @@ export default {
 
         // Registrar en historial_puerta
         const historialId = generateId();
+        const motivoInicial = 'Apertura solicitada desde la web' + (notaMora || '');
         await env.DB.prepare(`
           INSERT INTO historial_puerta (
             id, comando_id, fecha_hora, fecha_solicitud, solicitado_por, solicitado_nombre,
             solicitado_correo, solicitado_cedula, placa, tipo_vehiculo, rol,
             ip_solicitante, dispositivo_usuario, ubicacion_ip, estado, motivo, duracion_pulso_ms
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'SOLICITADO', 'Apertura solicitada desde la web', ?)
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'SOLICITADO', ?, ?)
         `).bind(
           historialId,
           comandoId,
@@ -1716,6 +1692,7 @@ export default {
           ipSolicitante,
           dispositivo,
           ubicacionIp,
+          motivoInicial,
           tiempoPulsoMs
         ).run();
 

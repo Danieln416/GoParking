@@ -107,14 +107,6 @@ export default function CarnetID() {
   async function handleAbrirBarrera() {
     if (abriendoBarrera) return;
 
-    if (!isAlDia) {
-      setModalBarrera({
-        estado: 'error',
-        mensaje: 'Tu membresía presenta mora o cobros pendientes. Realiza el pago para habilitar la apertura de la barrera.'
-      });
-      return;
-    }
-
     setAbriendoBarrera(true);
     setModalBarrera({
       estado: 'enviando',
@@ -159,7 +151,7 @@ export default function CarnetID() {
       } else {
         setModalBarrera({
           estado: 'error',
-          mensaje: res.error || 'No se pudo autorizar la apertura de la barrera.'
+          mensaje: res.error || 'No se pudo autorizar la apertura. Verifica si tu cuenta está activa con el administrador.'
         });
         setAbriendoBarrera(false);
       }
@@ -648,10 +640,8 @@ export default function CarnetID() {
               style={{
                 marginBottom: 16,
                 padding: 18,
-                background: isAlDia
-                  ? 'linear-gradient(135deg, rgba(16, 185, 129, 0.12) 0%, rgba(5, 150, 105, 0.2) 100%)'
-                  : 'rgba(239, 68, 68, 0.08)',
-                border: isAlDia ? '1px solid rgba(16, 185, 129, 0.35)' : '1px solid rgba(239, 68, 68, 0.35)',
+                background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.12) 0%, rgba(5, 150, 105, 0.2) 100%)',
+                border: '1px solid rgba(16, 185, 129, 0.35)',
                 display: 'flex',
                 flexDirection: 'column',
                 gap: 12
@@ -659,7 +649,7 @@ export default function CarnetID() {
             >
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <Radio size={18} color={isAlDia ? '#10b981' : '#ef4444'} className={isAlDia ? 'spin-icon' : ''} />
+                  <Radio size={18} color="#10b981" className="spin-icon" />
                   <h4 style={{ margin: 0, fontSize: 14, fontWeight: 700, color: 'var(--text-primary)' }}>
                     Control de Acceso Vehicular
                   </h4>
@@ -670,30 +660,28 @@ export default function CarnetID() {
                     fontWeight: 700,
                     padding: '2px 8px',
                     borderRadius: 12,
-                    background: isAlDia ? 'rgba(16, 185, 129, 0.2)' : 'rgba(239, 68, 68, 0.2)',
-                    color: isAlDia ? '#10b981' : '#ef4444'
+                    background: 'rgba(16, 185, 129, 0.2)',
+                    color: '#10b981'
                   }}
                 >
-                  {isAlDia ? 'HABILITADO' : 'BLOQUEADO'}
+                  HABILITADO
                 </span>
               </div>
 
               <p style={{ margin: 0, fontSize: 12, color: 'var(--text-secondary)' }}>
-                {isAlDia
-                  ? 'Presiona el botón para accionar la apertura de la barrera al entrar o salir.'
-                  : 'Tu mensualidad presenta saldo pendiente. Regulariza tu pago para habilitar la apertura.'}
+                Presiona el botón para accionar la apertura de la barrera al ingresar o salir.
               </p>
 
               <button
                 type="button"
                 className="btn btn-full"
                 onClick={handleAbrirBarrera}
-                disabled={abriendoBarrera || !isAlDia}
+                disabled={abriendoBarrera}
                 style={{
                   padding: '12px 18px',
                   fontSize: 15,
                   fontWeight: 700,
-                  backgroundColor: isAlDia ? '#10b981' : '#6b7280',
+                  backgroundColor: '#10b981',
                   color: '#fff',
                   border: 'none',
                   borderRadius: 10,
@@ -701,8 +689,8 @@ export default function CarnetID() {
                   alignItems: 'center',
                   justifyContent: 'center',
                   gap: 10,
-                  boxShadow: isAlDia ? '0 4px 14px rgba(16, 185, 129, 0.3)' : 'none',
-                  cursor: isAlDia ? 'pointer' : 'not-allowed'
+                  boxShadow: '0 4px 14px rgba(16, 185, 129, 0.3)',
+                  cursor: abriendoBarrera ? 'wait' : 'pointer'
                 }}
               >
                 <Power size={18} />

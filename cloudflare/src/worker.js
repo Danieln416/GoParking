@@ -1714,6 +1714,7 @@ export default {
         const usuarioId = data.usuarioId || data.usuario_id;
         let usuario = null;
         let esAdmin = data.rol === 'admin';
+        let notaMora = '';
 
         if (usuarioId && usuarioId !== 'admin') {
           usuario = await env.DB.prepare("SELECT * FROM usuarios WHERE id = ?").bind(usuarioId).first();
@@ -1786,7 +1787,6 @@ export default {
           }
 
           // Verificar si tiene mora únicamente para registro informativo en auditoría
-          let notaMora = '';
           try {
             const { results: userRecibos } = await env.DB.prepare(
               "SELECT * FROM recibos WHERE usuario_id = ?"

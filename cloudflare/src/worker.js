@@ -124,7 +124,7 @@ function calcularEstadoMoraUsuario(usuario, userReceipts = [], refDate = new Dat
     return { enMora: false, diasMora: 0, fechaCorte: formatDate(nextCutoff) };
   }
 
-  const diffFromCutoff = Math.round((todayZero - candidateCutoff) / msPerDay);
+  const diffFromCutoff = Math.round((todayZero.getTime() - candidateCutoff.getTime()) / msPerDay);
   return {
     enMora: true,
     diasMora: Math.max(0, diffFromCutoff),
@@ -1310,7 +1310,7 @@ export default {
             dueDate = uDate;
           }
 
-          const diffDays = Math.round((todayZero - dueDate) / 86400000);
+          const diffDays = Math.round((todayZero.getTime() - dueDate.getTime()) / 86400000);
           const isOverdue = diffDays > 0;
           const isToday = diffDays === 0;
 

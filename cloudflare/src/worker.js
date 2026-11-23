@@ -67,20 +67,6 @@ function addMonthsKeepingDay(date, months, targetDay) {
   return new Date(target.getFullYear(), target.getMonth(), Math.min(targetDay, lastDay));
 }
 
-// Cierre contable del administrador (12 al 11)
-function getAdminClosingPeriod(refDate = new Date()) {
-  const d = parseDate(refDate) || new Date();
-  let year = d.getFullYear();
-  let month = d.getMonth();
-  if (d.getDate() < 12) {
-    month -= 1;
-    if (month < 0) { month = 11; year -= 1; }
-  }
-  const start = new Date(year, month, 12);
-  const end = new Date(year, month + 1, 11);
-  return { startDate: formatDate(start), endDate: formatDate(end) };
-}
-
 // Determinar mora individual de un usuario
 function calcularEstadoMoraUsuario(usuario, userReceipts = [], refDate = new Date()) {
   const today = parseDate(refDate) || new Date();

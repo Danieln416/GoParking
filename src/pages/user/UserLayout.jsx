@@ -12,7 +12,7 @@ export default function UserLayout() {
 
   function handleLogout() {
     logout();
-    navigate('/login');
+    window.location.href = 'https://goparking.onrender.com';
   }
 
   function handleSync() {

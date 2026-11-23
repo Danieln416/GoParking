@@ -617,8 +617,11 @@ export const apiDesconectarWhatsApp = () =>
 export const apiEnviarWhatsAppTest = (celular, mensaje) =>
   callAPI('enviarWhatsAppPrueba', { celular, mensaje });
 
-export const apiDispararWhatsAppMora = () =>
-  callAPI('ejecutarNotificacionesMora');
+export const apiDispararWhatsAppMora = (forzar = false) =>
+  callAPI('ejecutarNotificacionesMora', { forzar });
+
+export const apiResetearBarridoHoy = () =>
+  callAPI('resetearBarridoHoy');
 
 // ============================================================
 // COBROS ADICIONALES (MULTAS Y COBROS EXTRAS)

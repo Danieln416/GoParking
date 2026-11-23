@@ -264,9 +264,164 @@ async function enviarMensajeWhatsApp(env, celular, mensajeTexto, variablesPlanti
   return { success: false, error: 'Proveedor de WhatsApp no soportado' };
 }
 
-// Ejecución del barrido automático de morosos
-async function ejecutarBarridoMorosos(env) {
-  console.log('Iniciando barrido automático de moras para WhatsApp...');
+// ============================================================
+// CADENCIA INTELIGENTE Y MENSAJERÍA ANTI-BANEO DE WHATSAPP
+// ============================================================
+
+function evaluarCadenciaInteligente(diasMora, notificacionesPrevias = [], hoyStr, forzar = false) {
+  // 1. Verificar si ya fue notificado en el mismo día (omitir si forzar = true)
+  if (!forzar && notificacionesPrevias.length > 0) {
+    const ultima = notificacionesPrevias[0];
+    const fechaUltimaStr = (ultima.fecha_envio || '').slice(0, 10);
+    if (fechaUltimaStr === hoyStr) {
+      return { enviar: false, motivo: 'Ya fue notificado hoy' };
+    }
+  }
+
+  // Obtener la última notificación exitosa de mora
+  const ultima = notificacionesPrevias.find(n => n.estado_envio === 'enviado');
+  const hoyMs = new Date(hoyStr).getTime();
+  const diasDesdeUltima = ultima && ultima.fecha_envio
+    ? Math.floor((hoyMs - new Date(ultima.fecha_envio).getTime()) / 86400000)
+    : 999;
+
+  // DÍA 0: Día de corte / vencimiento hoy
+  if (diasMora === 0) {
+    if (forzar || !ultima || diasDesdeUltima >= 25) {
+      return { enviar: true, etapa: 'vencimiento_hoy', motivo: 'Aviso de corte de mensualidad hoy' };
+    }
+    return { enviar: false, motivo: 'Aviso del día 0 ya enviado en este ciclo' };
+  }
+
+  // DÍAS 1 a 4: Período de cortesía inicial (Sin saturación / Anti-spam)
+  if (diasMora >= 1 && diasMora < 5) {
+    if (forzar) {
+      return { enviar: true, etapa: 'recordatorio_cortesia', motivo: `Envío forzado en cortesía (Día ${diasMora})` };
+    }
+    return { enviar: false, motivo: `Período de cortesía inicial (Día ${diasMora}). Próximo aviso en día 5` };
+  }
+
+  // DÍA 5 a 7: Primer recordatorio tras 5 días de vencimiento
+  if (diasMora >= 5 && diasMora < 8) {
+    const yaEnviadoDia5 = notificacionesPrevias.some(n => n.tipo_notificacion === 'recordatorio_5d');
+    if (forzar || !yaEnviadoDia5) {
+      return { enviar: true, etapa: 'recordatorio_5d', motivo: 'Primer recordatorio a los 5 días de vencido' };
+    }
+    return { enviar: false, motivo: 'Ya se envió el recordatorio de 5 días. Próximo aviso en día 8' };
+  }
+
+  // DÍA 8 a 9: Segundo recordatorio (3 días después del día 5)
+  if (diasMora >= 8 && diasMora < 10) {
+    const yaEnviadoDia8 = notificacionesPrevias.some(n => n.tipo_notificacion === 'recordatorio_8d');
+    if (forzar || (!yaEnviadoDia8 && diasDesdeUltima >= 2)) {
+      return { enviar: true, etapa: 'recordatorio_8d', motivo: 'Segundo recordatorio tras 3 días (Día 8)' };
+    }
+    return { enviar: false, motivo: 'Ya se envió el recordatorio de 8 días. Próximo aviso en día 10' };
+  }
+
+  // DÍA 10: Tercer recordatorio / Advertencia previa (2 días después del día 8)
+  if (diasMora === 10) {
+    const yaEnviadoDia10 = notificacionesPrevias.some(n => n.tipo_notificacion === 'advertencia_10d');
+    if (forzar || (!yaEnviadoDia10 && diasDesdeUltima >= 2)) {
+      return { enviar: true, etapa: 'advertencia_10d', motivo: 'Advertencia importante tras 2 días (Día 10)' };
+    }
+    return { enviar: false, motivo: 'Ya se envió la advertencia del día 10. A partir de mañana inicia cobro diario' };
+  }
+
+  // DÍA 11+: Insistencia diaria (cada 24 horas)
+  if (diasMora >= 11) {
+    if (forzar || diasDesdeUltima >= 1) {
+      return { enviar: true, etapa: 'mora_diaria', motivo: `Recordatorio diario activo (${diasMora} días en mora)` };
+    }
+    return { enviar: false, motivo: 'Ya fue notificado hoy en fase diaria' };
+  }
+
+  if (forzar) {
+    return { enviar: true, etapa: 'mora_diaria', motivo: `Envío forzado general (${diasMora} días en mora)` };
+  }
+
+  return { enviar: false, motivo: 'No califica para envío en esta fecha' };
+}
+
+function generarMensajeWhatsAppInteligente(user, estado, etapa, cuentasTexto) {
+  const primerNombre = (user.nombre || '').split(' ')[0] || 'Usuario';
+  const valorFmt = `$${Number(user.valor_tarifa || 0).toLocaleString('es-CO')}`;
+
+  // Variaciones dinámicas anti-baneo (Spintax para que ningún mensaje sea idéntico)
+  const saludos = [
+    `Hola ${primerNombre} 👋`,
+    `Buen día ${primerNombre} 🚗`,
+    `Estimado(a) ${primerNombre} 👋`,
+    `Cordial saludo ${primerNombre} 🚗`
+  ];
+  const despedidas = [
+    '¡Agradecemos tu puntualidad y colaboración! 🙌',
+    '¡Muchas gracias por mantener tu servicio al día! Que tengas un excelente día. 😊',
+    'Cualquier inquietud con tu registro de pago, estamos atentos para ayudarte. 🚗',
+    '¡Gracias por preferir GoParking! Saludos cordiales. 🚗✨'
+  ];
+
+  const saludo = saludos[Math.floor(Math.random() * saludos.length)];
+  const despedida = despedidas[Math.floor(Math.random() * despedidas.length)];
+
+  if (etapa === 'vencimiento_hoy') {
+    return `${saludo}, te saludamos del *Parqueadero GoParking* 🚗.\n\n` +
+      `Te recordamos amablemente que hoy *${estado.fechaCorte}* corresponde el pago de tu mensualidad de parqueadero.\n\n` +
+      `💰 *Valor mensualidad:* ${valorFmt}\n\n` +
+      `📌 *Cuentas bancarias habilitadas:*\n${cuentasTexto}\n\n` +
+      `Al realizar tu pago, por favor recuerda subir el comprobante en la aplicación web para mantener tu registro al día.\n\n` +
+      `${despedida}`;
+  }
+
+  if (etapa === 'recordatorio_cortesia') {
+    return `${saludo}, te contactamos de *GoParking* 🚗.\n\n` +
+      `Te recordamos amablemente que tu mensualidad presenta *${estado.diasMora} día(s) de vencimiento* (Fecha de corte: ${estado.fechaCorte}).\n\n` +
+      `💰 *Monto a cancelar:* ${valorFmt}\n\n` +
+      `📌 *Cuentas disponibles:*\n${cuentasTexto}\n\n` +
+      `Al realizar tu pago, por favor sube tu comprobante en la aplicación web para mantener tu mensualidad al día.\n\n` +
+      `${despedida}`;
+  }
+
+  if (etapa === 'recordatorio_5d') {
+    return `${saludo}, te contactamos de la administración de *GoParking* 🚗.\n\n` +
+      `Esperamos te encuentres muy bien. Te recordamos que tu mensualidad presenta *5 días de vencimiento* (Fecha de corte: ${estado.fechaCorte}).\n\n` +
+      `💰 *Monto a cancelar:* ${valorFmt}\n\n` +
+      `📌 *Cuentas disponibles:*\n${cuentasTexto}\n\n` +
+      `Si ya realizaste la transferencia o consignación, por favor recuerda adjuntar tu comprobante en la aplicación web para su validación.\n\n` +
+      `${despedida}`;
+  }
+
+  if (etapa === 'recordatorio_8d') {
+    return `${saludo}, te saludamos del equipo *GoParking* 🚗.\n\n` +
+      `Hacemos seguimiento a tu cuenta, la cual registra actualmente *8 días de vencimiento* (Fecha de corte: ${estado.fechaCorte}).\n\n` +
+      `💰 *Saldo pendiente:* ${valorFmt}\n\n` +
+      `📌 *Cuentas bancarias autorizadas:*\n${cuentasTexto}\n\n` +
+      `Agradecemos tu pronta gestión subiendo el comprobante en la plataforma web para evitar inconvenientes con la reserva de tu bahía.\n\n` +
+      `${despedida}`;
+  }
+
+  if (etapa === 'advertencia_10d') {
+    return `${saludo} ⚠️, te escribimos de la administración de *GoParking*.\n\n` +
+      `Te informamos con carácter *prioritario* que tu mensualidad acumula *10 días de vencimiento* (Fecha de corte: ${estado.fechaCorte}).\n\n` +
+      `💰 *Total vencido:* ${valorFmt}\n\n` +
+      `📌 *Cuentas para pago:*\n${cuentasTexto}\n\n` +
+      `⚠️ *Importante:* Por favor regulariza tu pago el día de hoy para evitar la desactivación temporal de tu acceso vehicular en la barrera.\n\n` +
+      `Una vez pagues, sube tu comprobante en la app web de inmediato.\n\n` +
+      `${despedida}`;
+  }
+
+  // mora_diaria (Día 11 en adelante)
+  return `${saludo}, recordatorio de pago pendiente *GoParking* 🚗.\n\n` +
+    `Tu mensualidad presenta un retraso de *${estado.diasMora} días* (Fecha de corte: ${estado.fechaCorte}).\n\n` +
+    `💰 *Saldo a la fecha:* ${valorFmt}\n\n` +
+    `📌 *Cuentas de pago:*\n${cuentasTexto}\n\n` +
+    `Te invitamos cordialmente a ponerte al día y registrar tu comprobante en la web para mantener activo tu servicio sin interrupciones.\n\n` +
+    `${despedida}`;
+}
+
+// Ejecución del barrido automático de morosos inteligente
+async function ejecutarBarridoMorosos(env, forzar = false) {
+  console.log(`Iniciando barrido automático inteligente de WhatsApp (forzar: ${forzar})...`);
   const { results: usuarios } = await env.DB.prepare(
     "SELECT * FROM usuarios WHERE rol = 'usuario' AND activo = 1"
   ).all();
@@ -278,39 +433,43 @@ async function ejecutarBarridoMorosos(env) {
     ? cuentas.map(c => `• ${c.nombre} (${c.entidad}): ${c.numero}`).join('\n')
     : 'Cuentas oficiales de GoParking';
 
+  const hoyStr = new Date().toISOString().slice(0, 10);
   let enviados = 0;
   let omitidos = 0;
+  let detalles = [];
 
   for (const user of usuarios) {
     const userRecibos = recibos.filter(r => r.usuario_id === user.id);
     const estado = calcularEstadoMoraUsuario(user, userRecibos);
 
     if (estado.enMora) {
-      // Verificar si ya fue notificado en las últimas 24 horas para evitar spam
-      const hoyStr = new Date().toISOString().slice(0, 10);
-      const { results: yaNotificado } = await env.DB.prepare(
-        "SELECT id FROM notificaciones_whatsapp WHERE usuario_id = ? AND date(fecha_envio) = ?"
-      ).bind(user.id, hoyStr).all();
+      // Consultar historial de notificaciones enviadas a este usuario desde su fecha de corte
+      const { results: notifs } = await env.DB.prepare(
+        "SELECT id, fecha_envio, tipo_notificacion, estado_envio FROM notificaciones_whatsapp WHERE usuario_id = ? AND date(fecha_envio) >= date(?) ORDER BY fecha_envio DESC"
+      ).bind(user.id, estado.fechaCorte).all();
 
-      if (yaNotificado && yaNotificado.length > 0) {
+      const decision = evaluarCadenciaInteligente(estado.diasMora, notifs || [], hoyStr, forzar);
+
+      if (!decision.enviar) {
         omitidos++;
+        detalles.push({ usuario: user.nombre, diasMora: estado.diasMora, enviado: false, motivo: decision.motivo });
         continue;
       }
 
-      const valorFmt = `$${Number(user.valor_tarifa || 0).toLocaleString('es-CO')}`;
-      const primerNombre = (user.nombre || '').split(' ')[0];
-
-      const mensaje = `Hola ${primerNombre} 👋, te saludamos del Parqueadero GoParking 🚗.\n\n` +
-        `Te recordamos amablemente que tu mensualidad presenta *${estado.diasMora} día(s) de vencimiento* (Fecha de corte: ${estado.fechaCorte}).\n\n` +
-        `💰 *Valor a cancelar:* ${valorFmt}\n\n` +
-        `📌 *Cuentas disponibles para pago:*\n${cuentasTexto}\n\n` +
-        `Una vez realizado el pago, por favor sube tu comprobante en la aplicación web para registrar tu mensualidad al día.\n\n` +
-        `¡Muchas gracias por tu puntualidad!`;
-
+      const mensaje = generarMensajeWhatsAppInteligente(user, estado, decision.etapa, cuentasTexto);
       const celular = user.celular || user.telefono;
+      const primerNombre = (user.nombre || '').split(' ')[0];
+      const valorFmt = `$${Number(user.valor_tarifa || 0).toLocaleString('es-CO')}`;
+
+      // Protección anti-baneo: pausa humana aleatoria entre 4 y 8 segundos antes de enviar
+      if (enviados > 0) {
+        const pausaMs = 4000 + Math.floor(Math.random() * 4000);
+        await new Promise(resolve => setTimeout(resolve, pausaMs));
+      }
+
       const resEnvio = await enviarMensajeWhatsApp(env, celular, mensaje, [primerNombre, estado.diasMora, valorFmt]);
 
-      // Guardar registro de la notificación
+      // Guardar registro de la notificación con su etapa inteligente
       const notifId = generateId();
       await env.DB.prepare(
         "INSERT INTO notificaciones_whatsapp (id, usuario_id, celular, tipo_notificacion, mensaje, estado_envio, proveedor_id) VALUES (?, ?, ?, ?, ?, ?, ?)"
@@ -318,18 +477,23 @@ async function ejecutarBarridoMorosos(env) {
         notifId,
         user.id,
         celular || '',
-        'mora',
+        decision.etapa,
         mensaje,
         resEnvio.success ? 'enviado' : 'fallido',
         resEnvio.data?.messages?.[0]?.id || ''
       ).run();
 
-      if (resEnvio.success) enviados++;
+      if (resEnvio.success) {
+        enviados++;
+        detalles.push({ usuario: user.nombre, diasMora: estado.diasMora, enviado: true, etapa: decision.etapa });
+      } else {
+        detalles.push({ usuario: user.nombre, diasMora: estado.diasMora, enviado: false, error: resEnvio.error });
+      }
     }
   }
 
-  console.log(`Barrido finalizado. Notificaciones enviadas: ${enviados}, Omitidas por aviso previo: ${omitidos}`);
-  return { success: true, enviados, omitidos };
+  console.log(`Barrido inteligente finalizado. Notificaciones enviadas: ${enviados}, Omitidas por cadencia: ${omitidos}`);
+  return { success: true, enviados, omitidos, detalles };
 }
 
 // ============================================================
@@ -1449,8 +1613,14 @@ export default {
       // ----------------------------------------------------
       // DISPARO MANUAL O DE PRUEBA DE WHATSAPP MOROSOS
       // ----------------------------------------------------
+      if (action === 'resetearBarridoHoy' || path === '/api/whatsapp/resetear-hoy') {
+        await env.DB.prepare("DELETE FROM notificaciones_whatsapp WHERE date(fecha_envio) = date('now')").run();
+        return json({ success: true, message: 'Registros de notificación de hoy eliminados con éxito' });
+      }
+
       if (action === 'ejecutarNotificacionesMora' || path === '/api/whatsapp/enviar-mora') {
-        const resultado = await ejecutarBarridoMorosos(env);
+        const forzar = Boolean(data?.forzar);
+        const resultado = await ejecutarBarridoMorosos(env, forzar);
         return json(resultado);
       }
 

@@ -5,11 +5,11 @@
     <title>GoParking — Redirigiendo...</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <script>
-      // Redirigir de inmediato al inicio para que React Router tome el control
+      // Redirigir estrictamente a la raíz de GoParking
       try {
-        window.location.replace('/login');
+        window.location.replace('https://goparking.onrender.com');
       } catch (e) {
-        window.location.href = '/login';
+        window.location.href = 'https://goparking.onrender.com';
       }
     </script>
     <style>
@@ -41,7 +41,7 @@
   <body>
     <div class="box">
       <h2>Redirigiendo a GoParking...</h2>
-      <p>Si no eres redirigido automáticamente, <a href="/login">haz clic aquí para ir al inicio de sesión</a>.</p>
+      <p>Si no eres redirigido automáticamente, <a href="https://goparking.onrender.com">haz clic aquí para ir a GoParking</a>.</p>
     </div>
   </body>
 </html>

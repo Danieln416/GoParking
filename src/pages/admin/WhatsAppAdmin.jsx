@@ -22,7 +22,8 @@ import {
   apiGetWhatsAppQR, 
   apiDesconectarWhatsApp, 
   apiEnviarWhatsAppTest,
-  apiDispararWhatsAppMora 
+  apiDispararWhatsAppMora,
+  apiResetearBarridoHoy 
 } from '../../api.js';
 
 export default function WhatsAppAdmin() {
@@ -45,6 +46,8 @@ export default function WhatsAppAdmin() {
   const [testMessage, setTestMessage] = useState('¡Hola! Este es un mensaje de prueba desde GoParking con WhatsApp conectado vía Código QR 🚗✅');
   const [sendingTest, setSendingTest] = useState(false);
   const [runningSweep, setRunningSweep] = useState(false);
+  const [cleaningToday, setCleaningToday] = useState(false);
+  const [sweepDetails, setSweepDetails] = useState(null);
 
   const pollIntervalRef = useRef(null);
 
@@ -184,15 +187,19 @@ export default function WhatsAppAdmin() {
     }
   }
 
-  async function handleDispararBarrido() {
-    if (!window.confirm('¿Deseas ejecutar ahora el barrido de morosos? Se enviará un recordatorio por WhatsApp a todos los usuarios con fecha de corte vencida que no hayan subido recibo.')) {
+  async function handleDispararBarrido(forzar = false) {
+    const confirmMsg = forzar
+      ? '¿Deseas FORZAR el envío de prueba? Se enviará WhatsApp a todos los usuarios vencidos ignorando el bloqueo de 24h y cortesía.'
+      : '¿Deseas ejecutar el barrido inteligente? Se enviará recordatorio siguiendo la cadencia anti-baneo.';
+    if (!window.confirm(confirmMsg)) {
       return;
     }
     setRunningSweep(true);
     try {
-      const res = await apiDispararWhatsAppMora();
+      const res = await apiDispararWhatsAppMora(forzar);
       if (res.success) {
-        showToast('success', `Barrido finalizado: ${res.enviados || 0} enviados, ${res.omitidos || 0} omitidos (ya notificados hoy)`);
+        setSweepDetails(res.detalles || []);
+        showToast('success', `Barrido finalizado: ${res.enviados || 0} enviados, ${res.omitidos || 0} omitidos`);
       } else {
         showToast('error', res.error || 'Error al ejecutar barrido');
       }
@@ -200,6 +207,26 @@ export default function WhatsAppAdmin() {
       showToast('error', 'Error: ' + err.message);
     } finally {
       setRunningSweep(false);
+    }
+  }
+
+  async function handleResetearHoy() {
+    if (!window.confirm('¿Deseas limpiar el historial de notificaciones enviadas hoy? Esto permitirá que el barrido normal vuelva a evaluar a todos los usuarios sin esperar a mañana.')) {
+      return;
+    }
+    setCleaningToday(true);
+    try {
+      const res = await apiResetearBarridoHoy();
+      if (res.success) {
+        setSweepDetails(null);
+        showToast('success', 'Historial de hoy limpiado. Ya puedes volver a probar el barrido.');
+      } else {
+        showToast('error', res.error || 'Error al limpiar historial');
+      }
+    } catch (err) {
+      showToast('error', 'Error: ' + err.message);
+    } finally {
+      setCleaningToday(false);
     }
   }
 
@@ -475,18 +502,120 @@ export default function WhatsAppAdmin() {
                 <div>
                   <h4 style={{ margin: 0, fontSize: 14 }}>Barrido Automático Programado</h4>
                   <p style={{ margin: '4px 0 0', fontSize: 12, color: 'var(--text-secondary)' }}>
-                    Se ejecuta todos los días a las 8:00 AM notificando a quienes tengan mensualidad vencida sin comprobante.
+                    Se ejecuta todos los días a las 8:00 AM aplicando la cadencia inteligente anti-baneo.
                   </p>
                 </div>
-                <button 
-                  type="button" 
-                  className="btn btn-ghost"
-                  onClick={handleDispararBarrido}
-                  disabled={runningSweep}
-                >
-                  <Clock size={15} />
-                  {runningSweep ? 'Ejecutando Barrido...' : 'Ejecutar Barrido Manual'}
-                </button>
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                  <button 
+                    type="button" 
+                    className="btn btn-ghost"
+                    onClick={() => handleDispararBarrido(false)}
+                    disabled={runningSweep || cleaningToday}
+                    title="Ejecuta el barrido respetando la cadencia de cortesía y el intervalo de 24 horas"
+                  >
+                    <Clock size={15} />
+                    {runningSweep ? 'Ejecutando...' : 'Barrido Normal'}
+                  </button>
+                  <button 
+                    type="button" 
+                    className="btn btn-primary"
+                    onClick={() => handleDispararBarrido(true)}
+                    disabled={runningSweep || cleaningToday}
+                    title="Fuerza el envío inmediato a los morosos para probar la entrega"
+                    style={{ background: '#3b82f6' }}
+                  >
+                    <Send size={15} />
+                    Forzar Envío (Prueba)
+                  </button>
+                  <button 
+                    type="button" 
+                    className="btn btn-ghost"
+                    onClick={handleResetearHoy}
+                    disabled={runningSweep || cleaningToday}
+                    title="Elimina las notificaciones registradas hoy para reiniciar el ciclo de prueba"
+                    style={{ color: '#f59e0b' }}
+                  >
+                    <RefreshCw size={15} className={cleaningToday ? 'spin' : ''} />
+                    Limpiar Historial de Hoy
+                  </button>
+                </div>
+              </div>
+
+              {/* Detalle del último barrido */}
+              {sweepDetails && sweepDetails.length > 0 && (
+                <div style={{
+                  marginTop: 14,
+                  padding: 12,
+                  background: 'var(--bg-secondary)',
+                  borderRadius: 8,
+                  border: '1px solid var(--border-color)',
+                  fontSize: 12
+                }}>
+                  <strong style={{ display: 'block', marginBottom: 8, color: 'var(--text-primary)' }}>
+                    📋 Resultados del último barrido ({sweepDetails.length} usuarios evaluados):
+                  </strong>
+                  <div style={{ maxHeight: 180, overflowY: 'auto' }}>
+                    {sweepDetails.map((d, i) => (
+                      <div key={i} style={{ 
+                        display: 'flex', 
+                        justifyContent: 'space-between', 
+                        padding: '4px 0', 
+                        borderBottom: '1px solid rgba(255,255,255,0.05)',
+                        color: d.enviado ? 'var(--accent-green)' : 'var(--text-secondary)'
+                      }}>
+                        <span><strong>{d.usuario}</strong> ({d.diasMora} días mora)</span>
+                        <span>{d.enviado ? `✅ Enviado (${d.etapa})` : `⏸️ Omitido: ${d.motivo}`}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Tarjeta Informativa de Cadencia Inteligente Anti-Baneo */}
+              <div style={{
+                marginTop: 16,
+                padding: '14px 18px',
+                background: 'rgba(34, 197, 94, 0.05)',
+                border: '1px solid rgba(34, 197, 94, 0.2)',
+                borderRadius: 10,
+                fontSize: 12.5
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: 'var(--accent-green)', fontWeight: 600, marginBottom: 8 }}>
+                  <ShieldCheck size={16} /> Cadencia Inteligente & Protección Anti-Baneo de WhatsApp
+                </div>
+                <div style={{ color: 'var(--text-secondary)', lineHeight: 1.6 }}>
+                  Para evitar bloqueos de WhatsApp y no saturar a los usuarios, los recordatorios siguen este flujo automático:
+                </div>
+                <div style={{ 
+                  display: 'grid', 
+                  gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', 
+                  gap: 8, 
+                  marginTop: 10 
+                }}>
+                  <div style={{ background: 'var(--bg-tertiary)', padding: '8px 10px', borderRadius: 8, textAlign: 'center' }}>
+                    <strong style={{ color: '#38bdf8' }}>Día 0</strong>
+                    <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>Vence hoy</div>
+                  </div>
+                  <div style={{ background: 'var(--bg-tertiary)', padding: '8px 10px', borderRadius: 8, textAlign: 'center' }}>
+                    <strong style={{ color: '#a78bfa' }}>Día 5</strong>
+                    <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>1er aviso (5 días)</div>
+                  </div>
+                  <div style={{ background: 'var(--bg-tertiary)', padding: '8px 10px', borderRadius: 8, textAlign: 'center' }}>
+                    <strong style={{ color: '#f59e0b' }}>Día 8</strong>
+                    <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>2do aviso (3d más)</div>
+                  </div>
+                  <div style={{ background: 'var(--bg-tertiary)', padding: '8px 10px', borderRadius: 8, textAlign: 'center' }}>
+                    <strong style={{ color: '#ef4444' }}>Día 10</strong>
+                    <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>Alerta (2d más)</div>
+                  </div>
+                  <div style={{ background: 'var(--bg-tertiary)', padding: '8px 10px', borderRadius: 8, textAlign: 'center' }}>
+                    <strong style={{ color: '#f43f5e' }}>Día 11+</strong>
+                    <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>Diario activo</div>
+                  </div>
+                </div>
+                <div style={{ marginTop: 10, fontSize: 11.5, color: 'var(--text-secondary)' }}>
+                  🛡️ <em>Incluye pausas humanas aleatorias (4 a 8 seg) entre mensajes y textos dinámicos con variaciones para prevenir reportes por spam.</em>
+                </div>
               </div>
             </div>
           )}

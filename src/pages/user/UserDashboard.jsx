@@ -19,7 +19,7 @@ import {
   X,
   AlertTriangle,
   IdCard,
-  Power
+  ShieldCheck
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext.jsx';
 import {
@@ -536,19 +536,16 @@ export default function UserDashboard() {
 
         <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
           <Link
-            to="/usuario/identificador"
-            className="btn btn-primary"
+            to="/usuario/verificar-usuario"
+            className="btn btn-ghost"
             style={{
-              backgroundColor: '#10b981',
-              borderColor: '#10b981',
-              display: 'flex',
-              alignItems: 'center',
-              gap: 8,
-              boxShadow: '0 4px 12px rgba(16, 185, 129, 0.25)'
+              borderColor: 'rgba(14, 165, 233, 0.45)',
+              color: 'var(--accent-blue)',
+              background: 'rgba(14, 165, 233, 0.08)'
             }}
           >
-            <Power size={16} />
-            Abrir Barrera
+            <ShieldCheck size={16} />
+            Verificar Usuario
           </Link>
 
           <Link
@@ -1329,6 +1326,42 @@ export default function UserDashboard() {
                 }}
               >
                 Ver historial completo
+              </p>
+            </div>
+          </Link>
+
+          <Link
+            to="/usuario/verificar-usuario"
+            style={{ textDecoration: 'none' }}
+          >
+            <div
+              className="card"
+              style={{
+                cursor: 'pointer',
+                textAlign: 'center',
+                padding: 28
+              }}
+            >
+              <ShieldCheck
+                size={28}
+                color="var(--accent-blue)"
+                style={{ marginBottom: 8 }}
+              />
+              <p
+                style={{
+                  fontWeight: 600,
+                  color: 'var(--text-primary)'
+                }}
+              >
+                Verificar Usuario
+              </p>
+              <p
+                style={{
+                  fontSize: 12,
+                  color: 'var(--text-secondary)'
+                }}
+              >
+                Consultar placa o vehículo
               </p>
             </div>
           </Link>

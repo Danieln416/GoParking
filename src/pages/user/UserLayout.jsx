@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Outlet, NavLink, useNavigate } from 'react-router-dom';
-import { Car, LayoutDashboard, Receipt, Upload, MessageSquare, RotateCw, LogOut, Menu, X, IdCard } from 'lucide-react';
+import { Car, LayoutDashboard, Receipt, Upload, MessageSquare, RotateCw, LogOut, Menu, X, IdCard, ShieldCheck } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext.jsx';
 import { apiClearCache } from '../../api.js';
 
@@ -40,27 +40,32 @@ export default function UserLayout() {
         <nav className="sidebar-nav">
           <p className="sidebar-section-label">Menú</p>
 
-          <NavLink to="/usuario" end className={({ isActive }) => `sidebar-link ${isActive ? 'active' : ''}`}>
+          <NavLink to="/usuario" end onClick={() => setMobileMenuOpen(false)} className={({ isActive }) => `sidebar-link ${isActive ? 'active' : ''}`}>
             <LayoutDashboard className="nav-icon" />
             Inicio
           </NavLink>
 
-          <NavLink to="/usuario/identificador" className={({ isActive }) => `sidebar-link ${isActive ? 'active' : ''}`}>
+          <NavLink to="/usuario/identificador" onClick={() => setMobileMenuOpen(false)} className={({ isActive }) => `sidebar-link ${isActive ? 'active' : ''}`}>
             <IdCard className="nav-icon" />
             Mi Carnet ID
           </NavLink>
 
-          <NavLink to="/usuario/historial" className={({ isActive }) => `sidebar-link ${isActive ? 'active' : ''}`}>
+          <NavLink to="/usuario/verificar-usuario" onClick={() => setMobileMenuOpen(false)} className={({ isActive }) => `sidebar-link ${isActive ? 'active' : ''}`}>
+            <ShieldCheck className="nav-icon" />
+            Verificar Usuario
+          </NavLink>
+
+          <NavLink to="/usuario/historial" onClick={() => setMobileMenuOpen(false)} className={({ isActive }) => `sidebar-link ${isActive ? 'active' : ''}`}>
             <Receipt className="nav-icon" />
             Mis Pagos
           </NavLink>
 
-          <NavLink to="/usuario/subir-recibo" className={({ isActive }) => `sidebar-link ${isActive ? 'active' : ''}`}>
+          <NavLink to="/usuario/subir-recibo" onClick={() => setMobileMenuOpen(false)} className={({ isActive }) => `sidebar-link ${isActive ? 'active' : ''}`}>
             <Upload className="nav-icon" />
             Subir Recibo
           </NavLink>
 
-          <NavLink to="/usuario/solicitudes" className={({ isActive }) => `sidebar-link ${isActive ? 'active' : ''}`}>
+          <NavLink to="/usuario/solicitudes" onClick={() => setMobileMenuOpen(false)} className={({ isActive }) => `sidebar-link ${isActive ? 'active' : ''}`}>
             <MessageSquare className="nav-icon" />
             Solicitudes
           </NavLink>

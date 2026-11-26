@@ -52,6 +52,9 @@ export default function App() {
           <Route path="identificador" element={<CarnetID />} />
           <Route path="id" element={<CarnetID />} />
           <Route path="carnet" element={<CarnetID />} />
+          <Route path="verificar-usuario" element={<ControlPlacas />} />
+          <Route path="control-placas" element={<ControlPlacas />} />
+          <Route path="placas" element={<ControlPlacas />} />
           <Route path="historial" element={<Historial />} />
           <Route path="subir-recibo" element={<SubirRecibo />} />
           <Route path="solicitudes" element={<Solicitudes />} />
